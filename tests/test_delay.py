@@ -6,45 +6,46 @@ from mock import Mock
 
 from yarp import NoValue, Value, delay
 
+
 class TestDelayPersistent(object):
-    
     @pytest.fixture
     def v(self):
         """Value, pre-delay."""
         return Value(123)
-    
+
     @pytest.fixture
     def dt(self):
         """Delay duration, seconds."""
         return Value(0.1)
-    
+
     @pytest.fixture
     def log(self):
         """An array of (time, value) tuples for each callback from 'delay'."""
         return []
-    
+
     @pytest.fixture
     def sem(self):
         """A semaphore released whenever the callback is called."""
         return asyncio.Semaphore(0)
-    
+
     @pytest.fixture
     def dv(self, v, dt, log, sem, event_loop):
         """Delayed value"""
         dv = delay(v, dt, loop=event_loop)
-        
+
         def on_change(value):
             log.append((event_loop.time(), value))
             sem.release()
+
         dv.on_value_changed(on_change)
-        
+
         return dv
-    
+
     @pytest.mark.asyncio
     async def test_initial_value(self, dv):
         # Initial value should pass through immediately
         assert dv.value == 123
-    
+
     @pytest.mark.asyncio
     async def test_single_change(self, v, dv, sem, log, event_loop):
         # Trigger a change for later...
@@ -57,7 +58,7 @@ class TestDelayPersistent(object):
         assert log[-1][0] - before >= 0.1
         assert log[-1][1] == 321
         assert dv.value == 321
-    
+
     @pytest.mark.asyncio
     async def test_rapid_changes(self, v, dv, sem, log, event_loop):
         # Trigger a sequence of rapid changes
@@ -78,67 +79,67 @@ class TestDelayPersistent(object):
         assert log[-2][1] == 12345
         assert log[-1][1] == 123456
         assert dv.value == 123456
-    
+
     @pytest.mark.asyncio
     async def test_delay_increase(self, v, dv, dt, sem, log, event_loop):
         before = event_loop.time()
         v.value = 321
-        
+
         # Changing the delay after a value change has occurred should push that
         # change further into the past, but only relative to its original start
         # time
         await asyncio.sleep(0.05)
         dt.value = 0.2
-        
+
         await sem.acquire()
         assert len(log) == 1
         assert log[-1][0] - before >= 0.2
         assert dv.value == 321
-    
+
     @pytest.mark.asyncio
     async def test_delay_decrease(self, v, dv, dt, sem, log, event_loop):
         before = event_loop.time()
         v.value = 321
-        
+
         # Changing the delay after a value change has occurred should push that
         # delay closer
         await asyncio.sleep(0.025)
         dt.value = 0.05
-        
+
         await sem.acquire()
         assert len(log) == 1
         assert 0.05 <= log[-1][0] - before < 0.10
         assert dv.value == 321
-    
+
     @pytest.mark.asyncio
     async def test_delay_decrease_lots(self, v, dv, dt, sem, log, event_loop):
         before = event_loop.time()
         v.value = 321
-        
+
         # Changing the delay such that a still-delayed value should have been
         # output already should cause that value to be output immediately
         await asyncio.sleep(0.05)
         dt.value = 0.01
-        
+
         assert len(log) == 1
         assert log[-1][0] - before >= 0.05
         assert log[-1][1] == 321
         assert dv.value == 321
 
-class TestDelayInstantaneous(object):
 
+class TestDelayInstantaneous(object):
     @pytest.mark.asyncio
     async def test_instantaneous(self):
         value = Value()
-        
+
         delayed_value = delay(value, 0.1)
         assert delayed_value.value is NoValue
-        
+
         # Monitor changes
         evt = asyncio.Event()
         m = Mock(side_effect=lambda *_: evt.set())
         delayed_value.on_value_changed(m)
-        
+
         # Trigger a change for later...
         before = time.time()
         value.set_instantaneous_value(123)
@@ -148,4 +149,3 @@ class TestDelayInstantaneous(object):
         assert time.time() - before >= 0.1
         m.assert_called_once_with(123)
         assert delayed_value.value is NoValue
-    

@@ -63,9 +63,11 @@ wrapped_functions = [
     ("sorted", sorted, "sorted"),
     ("str", str, "str"),
     ("repr", repr, "repr"),
-    ("str_format",
+    (
+        "str_format",
         lambda a, *args, **kwargs: a.format(*args, **kwargs),
-        "str.format(...)"),
+        "str.format(...)",
+    ),
     ("oct", oct, "oct"),
     ("hex", hex, "hex"),
     ("zip", zip, "zip"),
@@ -78,34 +80,38 @@ wrapped_functions = [
 
 for function_name, function, full_name in wrapped_functions:
     continous = fn(function)
-    continous.__doc__ = \
-        "Version of {} which returns a continous Values\n{}".format(
-            full_name, continous.__doc__
-        )
-    
+    continous.__doc__ = "Version of {} which returns a continous Values\n{}".format(
+        full_name, continous.__doc__
+    )
+
     instantaneous = instantaneous_fn(function)
-    instantaneous.__doc__ = \
+    instantaneous.__doc__ = (
         "Version of {} which returns an instantaneous Values\n{}".format(
             full_name, instantaneous.__doc__
         )
-    
+    )
+
     # Add operators to namespace
     globals()[function_name] = continous
     globals()["instantaneous_" + function_name] = instantaneous
+
 
 def swap_args(f):
     """
     Return a version of 'f' which takes two arguments in the opposite order.
     """
+
     @wraps(f)
     def wrapper(*args):
         return f(*reversed(args))
+
     return wrapper
 
 
 def call(f, *args, **kwargs):
     """Call ``f`` with the arguments provided, passing on the return value."""
     return f(*args, **kwargs)
+
 
 value_operators = [
     # Arithmatic
@@ -165,12 +171,11 @@ value_operators = [
 for function_name, native_function, doc in value_operators:
     continous = fn(native_function)
     continous.__doc__ = "{} (returning a continous Value)".format(doc)
-    
+
     # Add to Value class as operator implementations
     setattr(Value, function_name, continous)
 
 
-__names__ = (
-    [name for name, _, _ in wrapped_functions] +
-    ["instantaneous_" + name for name, _, _ in wrapped_functions]
-)
+__names__ = [name for name, _, _ in wrapped_functions] + [
+    "instantaneous_" + name for name, _, _ in wrapped_functions
+]
