@@ -263,7 +263,7 @@ class Event(Reactive):
 
     def _on_inputs_done(self):
         if self._on_inputs_done_cb is not None:
-            self._on_inputs_done_cb()
+            self._on_inputs_done_cb(self.emit)
 
 
 def value_list(list_of_values):
