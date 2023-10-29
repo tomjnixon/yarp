@@ -1,11 +1,6 @@
-"""
-The fundamental :py:class:`Value` type for yarp, along with relatively
-generic low-level utilities for creating and manipulating them.
-"""
-
-
 import functools
 import sentinel
+import weakref
 
 __names__ = [
     "NoValue",
@@ -24,26 +19,123 @@ NoValue = sentinel.create("NoValue")
 A special value indicating that a ``yarp`` value has not been assigned a value.
 """
 
+NoChange = sentinel.create("NoChange")
 
-class Value(object):
-    """
-    A continuous or instantaneous value which can be read and set.
 
-    This base class defines the fundamental type in ``yarp``: the 'value'.
+class Reactive:
+    def __init__(self, inputs):
+        self._inputs = tuple(inputs)
 
-    The actual data contained by this object should be regarded as immutable
-    with changes being made by replacing the Python object with a new one to
-    affect changes.
-    """
+        self._dependencies = []
+        # incremented whenever _dependencies is modified.
+        # each Reactive checks that all dependents have not been modified when
+        # it's ran by looking at this. an alternative would be to mark all
+        # inputs redursively as dirty on construction/destruction, but that
+        # would make graph construction/destruction O(n^2)
+        self._dependencies_version = 0
 
-    # Note to developers: The magic methods (e.g. __add__, __getattr__ and
-    # __call__) are monkey-patched into this class in the yarp.python_operators
-    # module. This is a little bit ugly but makes implementation substantially
-    # easier/cleaner.
+        # dependency information used to update downstream values/events
+        # this is calculated when it's needed, and when any downstream
+        # dependencies are changed.
+        # all dependencies topologically sorted (including self)
+        self._all_dependencies = None
+        # the version for each dependency
+        self._all_dependencies_versions = None
+        # for each dependency, the index of dependents in _all_dependencies
+        self._dependent_idxes = None
 
-    def __init__(self, initial_value=NoValue):
+        # temporary list the same length as _all_dependencies to keep track of
+        # dependencies to skip
+        self._tmp_skip_dep = None
+
+        # add self to dependency lists of inputs. because no new inputs can be
+        # added to this FnValue, all dependency lists remain topologically sorted
+        for input in self._inputs:
+            input._add_dependency(self)
+
+    def _on_inputs_changed(self):
+        # called when inputs have finished changing (all on-change callbacks have ran)
+        # should return true if dependents need to run
+        raise NotImplementedError()
+
+    def _on_external_change(self):
+        # called when something external has changed this (e.g. by writing to
+        # .value), and all dependents need to update too
+        if self._all_dependencies is None or any(
+            dep._dependencies_version != expected_version
+            for dep, expected_version in zip(
+                self._all_dependencies, self._all_dependencies_versions
+            )
+        ):
+            self._all_dependencies = self._toposorted_dependencies()
+            self._all_dependencies_versions = [
+                dep._dependencies_version for dep in self._all_dependencies
+            ]
+            idx_by_id = {id(dep): idx for idx, dep in enumerate(self._all_dependencies)}
+            self._dependent_idxes = [
+                [idx_by_id[id(dep_dep)] for dep_dep in dep._dependencies]
+                for dep in self._all_dependencies
+            ]
+            self._tmp_skip_dep = [False] * len(self._all_dependencies)
+
+        for i in range(len(self._tmp_skip_dep)):
+            self._tmp_skip_dep[i] = False
+
+        for i in range(1, len(self._tmp_skip_dep)):
+            skip = self._tmp_skip_dep[i]
+            if skip:
+                dep = self._all_dependencies[i]()
+                if dep is not None:
+                    skip = not self._all_dependencies[i]._on_inputs_changed()
+                else:
+                    skip = True
+
+            if skip:
+                for dep_i in self._dependent_idxes[i]:
+                    self._tmp_skip_dep[dep_i] = True
+
+    def _add_dependency(self, dependency):
+        self._dependencies.append(weakref.ref(dependency, self._remove_dependency))
+        self._dependencies_version += 1
+
+    def _remove_dependency(self, weak_dependency):
+        for i, dep in enumerate(self._dependencies):
+            if dep is weak_dependency:
+                del self._dependencies[i]
+                self._dependencies_version += 1
+                break
+        else:
+            assert False, "inconsistent dependency references"
+
+    def _toposorted_dependencies(self):
+        all_deps = []
+
+        self._dfs_deps(all_deps, visited=set())
+
+        all_deps.reverse()
+        assert all_deps[0] is self
+
+        return all_deps
+
+    def _dfs_deps(self, all_deps, visited):
+        if id(self) in visited:
+            return
+
+        for weak_dependency in self._dependencies:
+            if (dependency := weak_dependency()) is not None:
+                dependency._dfs_deps(all_deps, visited)
+
+        visited.add(id(self))
+        all_deps.append(weakref.ref(self))
+
+
+class Value(Reactive):
+    def __init__(self, initial_value=NoValue, inputs=(), get_value=None):
+        super(Value, self).__init__(inputs)
+
         self._value = initial_value
         self._on_value_changed = []
+        self._get_value = get_value
 
     @property
     def value(self):
@@ -54,8 +146,6 @@ class Value(object):
 
         Setting this property sets the (continuous) contents of this value
         (raising the :py:meth:`on_value_changed` callback afterwards).
-
-        To set the instantaneous value, see :py:meth:`set_instantaneous_value`.
 
         To change the value without raising a callback, set the
         :py:attr:`_value` attribute directly. This may be useful if you wish to
@@ -70,16 +160,9 @@ class Value(object):
     @value.setter
     def value(self, new_value):
         self._value = new_value
-        self.set_instantaneous_value(new_value)
-
-    def set_instantaneous_value(self, new_value):
-        """
-        Set the instantaneous value of this Value, calling the on_value_changed
-        callbacks with the passed value but not storing it in the
-        :py:attr:`value` property (which will remain unchanged).
-        """
         for cb in self._on_value_changed:
             cb(new_value)
+        self._on_external_change()
 
     def on_value_changed(self, cb):
         """
@@ -87,10 +170,7 @@ class Value(object):
         value changes.
 
         The callback function will be called with a single argument: the value
-        now held by this object. If the value is continuous, the value given as
-        the argument will match the :py:attr:`Value.value` property.
-        Otherwise, if this value is instantaneous, the value will not be
-        reflected in the :py:attr:`Value.value` property.
+        now held by this object.
 
         .. note::
 
@@ -105,11 +185,58 @@ class Value(object):
         self._on_value_changed.append(cb)
         return cb
 
+    def _on_inputs_changed(self):
+        if self._get_value is None:
+            return False
+
+        new_value = self._get_value()
+        if new_value is NoChange:
+            return False
+
+        self._value = new_value
+        for cb in self._on_value_changed:
+            cb(new_value)
+
     def __repr__(self):
         return "Value({})".format(repr(self.value))
 
     def __str__(self):
         return repr(self)
+
+
+class Event(Reactive):
+    def __init__(self, inputs=(), on_inputs_done=None):
+        super(Value, self).__init__(inputs)
+
+        self._callbacks = []
+        self._on_inputs_done = on_inputs_done
+
+    def on_event(self, cb):
+        self._callbacks.append(cb)
+        return cb
+
+    def emit(self, value):
+        for cb in self._callbacks:
+            cb(value)
+        self._on_external_change()
+
+    def emit_in_transaction(self, value):
+        for cb in self._callbacks:
+            cb(value)
+
+    def _on_inputs_changed(self):
+        emitted = False
+        if self._on_inputs_done is not None:
+
+            def emit(value):
+                nonlocal emitted
+                emitted = True
+                for cb in self._callbacks:
+                    cb(value)
+
+            self._on_inputs_changed(emit)
+
+        return emitted
 
 
 def value_list(list_of_values):
