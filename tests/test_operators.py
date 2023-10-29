@@ -3,10 +3,11 @@ from mock import Mock
 from yarp import (
     NoValue,
     Value,
+    Event,
     value_list,
     value_dict,
     add,
-    instantaneous_not_,
+    not_,
     str_format,
     getattr,
 )
@@ -24,23 +25,21 @@ def test_operator_wrapper_continous():
     assert a_add_b.value == 12
 
 
-def test_operator_wrapper_instantaneous():
+def test_operator_wrapper_event():
     # Only test negation since others are defined in exactly the same way
-    a = Value()
+    a = Event()
 
-    not_a = instantaneous_not_(a)
-    assert not_a.value is NoValue
+    not_a = not_(a)
+    assert isinstance(not_a, Event)
 
     m = Mock()
-    not_a.on_value_changed(m)
+    not_a.on_event(m)
 
-    a.set_instantaneous_value(True)
-    assert not_a.value is NoValue
+    a.emit(True)
     m.assert_called_once_with(False)
     m.reset_mock()
 
-    a.set_instantaneous_value(False)
-    assert not_a.value is NoValue
+    a.emit(False)
     m.assert_called_once_with(True)
     m.reset_mock()
 
@@ -210,4 +209,3 @@ def test_native_value_operators():
 def test_operator_wrapper_docstring():
     assert "continous value" in Value.__add__.__doc__.lower()
     assert "continous value" in add.__doc__.lower()
-    assert "instantaneous value" in instantaneous_not_.__doc__.lower()

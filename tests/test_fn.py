@@ -1,6 +1,6 @@
 from mock import Mock
 
-from yarp import NoValue, Value, fn, instantaneous_fn
+from yarp import NoValue, Value, Event, fn, event_to_value
 
 
 def test_no_args():
@@ -68,57 +68,76 @@ def test_positional_kwargs():
     assert result.value == 25
 
 
-def test_inst_positional_args():
+def test_event_positional_args():
     m = Mock()
 
-    @instantaneous_fn
+    @fn
     def example(*args, **kwargs):
         return (args, kwargs)
 
-    a_value = Value()
-    b_value = Value()
+    a_value = Event()
+    b_value = Event()
 
-    # No value should be assigned
     result = example(a_value, b_value)
-    result.on_value_changed(m)
-    assert result.value is NoValue
+    assert isinstance(result, Event)
+    result.on_event(m)
 
-    # Changes should propagate, callbacks should fire but no value should be
-    # stored
+    # Changes should propagate, callbacks should fire
     m.reset_mock()
-    a_value.set_instantaneous_value(123)
+    a_value.emit(123)
     m.assert_called_once_with(((123, NoValue), {}))
-    assert result.value is NoValue
 
     m.reset_mock()
-    b_value.set_instantaneous_value(123)
+    b_value.emit(123)
     m.assert_called_once_with(((NoValue, 123), {}))
-    assert result.value is NoValue
 
 
-def test_inst_positional_kwargs():
+def test_event_kwargs():
     m = Mock()
 
-    @instantaneous_fn
+    @fn
     def example(*args, **kwargs):
         return (args, kwargs)
 
-    a_value = Value()
-    b_value = Value()
+    a_value = Event()
+    b_value = Event()
 
     # No value should be assigned
     result = example(a=a_value, b=b_value)
-    result.on_value_changed(m)
-    assert result.value is NoValue
+    assert isinstance(result, Event)
+    result.on_event(m)
 
-    # Changes should propagate, callbacks should fire but no value should be
-    # stored
+    # Changes should propagate, callbacks should fire
     m.reset_mock()
-    a_value.set_instantaneous_value(123)
+    a_value.emit(123)
     m.assert_called_once_with(((), {"a": 123, "b": NoValue}))
-    assert result.value is NoValue
 
     m.reset_mock()
-    b_value.set_instantaneous_value(123)
+    b_value.emit(123)
     m.assert_called_once_with(((), {"a": NoValue, "b": 123}))
-    assert result.value is NoValue
+
+
+def test_mixed():
+    """check that mixed use results in an event, with correct event buffering"""
+
+    @fn
+    def example(a, b, c):
+        return a, b, c
+
+    # without buffering events until on_inputs_done, value updates would be missed
+    e = Event()
+    v = event_to_value(e)
+    e2 = Event()
+
+    result = example(e, v, e2)
+    assert isinstance(result, Event)
+
+    result.on_event(m := Mock())
+
+    m.reset_mock()
+    e.emit(5)
+    m.assert_called_once_with((5, 5, NoValue))
+
+    m.reset_mock()
+    e2.emit(6)
+    m.assert_called_once_with((NoValue, 5, 6))

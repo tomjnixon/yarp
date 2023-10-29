@@ -4,7 +4,7 @@ Implementations of native Python operations on :py:class:`Value` objects.
 
 from functools import wraps
 
-from yarp.function_wrappers import Value, fn, instantaneous_fn
+from yarp.function_wrappers import Value, fn
 
 import operator
 import builtins
@@ -84,16 +84,8 @@ for function_name, function, full_name in wrapped_functions:
         full_name, continous.__doc__
     )
 
-    instantaneous = instantaneous_fn(function)
-    instantaneous.__doc__ = (
-        "Version of {} which returns an instantaneous Values\n{}".format(
-            full_name, instantaneous.__doc__
-        )
-    )
-
     # Add operators to namespace
     globals()[function_name] = continous
-    globals()["instantaneous_" + function_name] = instantaneous
 
 
 def swap_args(f):
@@ -176,6 +168,4 @@ for function_name, native_function, doc in value_operators:
     setattr(Value, function_name, continous)
 
 
-__names__ = [name for name, _, _ in wrapped_functions] + [
-    "instantaneous_" + name for name, _, _ in wrapped_functions
-]
+__names__ = [name for name, _, _ in wrapped_functions]
