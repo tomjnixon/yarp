@@ -1,6 +1,7 @@
 import functools
 import sentinel
 import weakref
+from contextvars import ContextVar
 
 __names__ = [
     "NoValue",
@@ -20,6 +21,9 @@ A special value indicating that a ``yarp`` value has not been assigned a value.
 """
 
 NoChange = sentinel.create("NoChange")
+
+
+_mark_changed = ContextVar("_mark_changed", default=None)
 
 
 class Reactive:
@@ -45,54 +49,91 @@ class Reactive:
         self._dependent_idxes = None
 
         # temporary list the same length as _all_dependencies to keep track of
-        # dependencies to skip
-        self._tmp_skip_dep = None
+        # dependencies to run
+        self._tmp_changed = None
+        self._tmp_to_run = None
+        # mapping from id of dependencies to their index
+        self._id_to_idx = None
 
         # add self to dependency lists of inputs. because no new inputs can be
         # added to this FnValue, all dependency lists remain topologically sorted
         for input in self._inputs:
             input._add_dependency(self)
 
-    def _on_inputs_changed(self):
+    def _on_inputs_done(self):
         # called when inputs have finished changing (all on-change callbacks have ran)
-        # should return true if dependents need to run
         raise NotImplementedError()
+
+    def _on_change(self):
+        # call when this has changed and dependencies need to run
+        mark_changed = _mark_changed.get()
+        if mark_changed is None:
+            self._on_external_change()
+        else:
+            mark_changed(self)
 
     def _on_external_change(self):
         # called when something external has changed this (e.g. by writing to
         # .value), and all dependents need to update too
+        # XXX: fix lax weak dereference
         if self._all_dependencies is None or any(
-            dep._dependencies_version != expected_version
+            dep()._dependencies_version != expected_version
             for dep, expected_version in zip(
                 self._all_dependencies, self._all_dependencies_versions
             )
         ):
             self._all_dependencies = self._toposorted_dependencies()
+            # XXX: fix lax weak dereference
             self._all_dependencies_versions = [
-                dep._dependencies_version for dep in self._all_dependencies
+                dep()._dependencies_version for dep in self._all_dependencies
             ]
-            idx_by_id = {id(dep): idx for idx, dep in enumerate(self._all_dependencies)}
+            # XXX: fix lax weak dereference
+            self._id_to_idx = {
+                id(dep()): idx for idx, dep in enumerate(self._all_dependencies)
+            }
+            # XXX: fix lax weak dereferences
             self._dependent_idxes = [
-                [idx_by_id[id(dep_dep)] for dep_dep in dep._dependencies]
+                [self._id_to_idx[id(dep_dep())] for dep_dep in dep()._dependencies]
                 for dep in self._all_dependencies
             ]
-            self._tmp_skip_dep = [False] * len(self._all_dependencies)
+            self._tmp_changed = [False] * len(self._all_dependencies)
+            self._tmp_to_run = [False] * len(self._all_dependencies)
 
-        for i in range(len(self._tmp_skip_dep)):
-            self._tmp_skip_dep[i] = False
+        id_to_idx = self._id_to_idx
+        tmp_changed = self._tmp_changed
+        tmp_to_run = self._tmp_to_run
+        dependent_idxes = self._dependent_idxes
 
-        for i in range(1, len(self._tmp_skip_dep)):
-            skip = self._tmp_skip_dep[i]
-            if skip:
-                dep = self._all_dependencies[i]()
-                if dep is not None:
-                    skip = not self._all_dependencies[i]._on_inputs_changed()
-                else:
-                    skip = True
+        for i in range(len(tmp_changed)):
+            tmp_changed[i] = False
+            tmp_to_run[i] = False
 
-            if skip:
-                for dep_i in self._dependent_idxes[i]:
-                    self._tmp_skip_dep[dep_i] = True
+        def mark_changed(obj):
+            try:
+                idx = id_to_idx[id(obj)]
+            except KeyError:
+                warnings.warn(
+                    f"untracked dependency from {self!r} (id {id(self)}) "
+                    f"to {obj!r} (id {id(obj)})"
+                )
+            else:
+                if not tmp_changed[idx]:
+                    tmp_changed[idx] = True
+                    for dep_idx in dependent_idxes[idx]:
+                        tmp_to_run[dep_idx] = True
+
+        mark_changed(self)
+
+        token = _mark_changed.set(mark_changed)
+
+        try:
+            for i in range(1, len(self._all_dependencies)):
+                if tmp_to_run[i]:
+                    dep = self._all_dependencies[i]()
+                    if dep is not None:
+                        dep._on_inputs_done()
+        finally:
+            _mark_changed.reset(token)
 
     def _add_dependency(self, dependency):
         self._dependencies.append(weakref.ref(dependency, self._remove_dependency))
@@ -113,7 +154,7 @@ class Reactive:
         self._dfs_deps(all_deps, visited=set())
 
         all_deps.reverse()
-        assert all_deps[0] is self
+        assert all_deps[0]() is self
 
         return all_deps
 
@@ -136,6 +177,10 @@ class Value(Reactive):
         self._value = initial_value
         self._on_value_changed = []
         self._get_value = get_value
+
+        if get_value is not None:
+            # there cannot be any callbacks or dependencies here
+            self._value = get_value()
 
     @property
     def value(self):
@@ -162,7 +207,7 @@ class Value(Reactive):
         self._value = new_value
         for cb in self._on_value_changed:
             cb(new_value)
-        self._on_external_change()
+        self._on_change()
 
     def on_value_changed(self, cb):
         """
@@ -185,17 +230,13 @@ class Value(Reactive):
         self._on_value_changed.append(cb)
         return cb
 
-    def _on_inputs_changed(self):
+    def _on_inputs_done(self):
         if self._get_value is None:
-            return False
+            return
 
         new_value = self._get_value()
-        if new_value is NoChange:
-            return False
-
-        self._value = new_value
-        for cb in self._on_value_changed:
-            cb(new_value)
+        if new_value is not NoChange:
+            self.value = new_value
 
     def __repr__(self):
         return "Value({})".format(repr(self.value))
@@ -206,10 +247,10 @@ class Value(Reactive):
 
 class Event(Reactive):
     def __init__(self, inputs=(), on_inputs_done=None):
-        super(Value, self).__init__(inputs)
+        super(Event, self).__init__(inputs)
 
         self._callbacks = []
-        self._on_inputs_done = on_inputs_done
+        self._on_inputs_done_cb = on_inputs_done
 
     def on_event(self, cb):
         self._callbacks.append(cb)
@@ -220,23 +261,9 @@ class Event(Reactive):
             cb(value)
         self._on_external_change()
 
-    def emit_in_transaction(self, value):
-        for cb in self._callbacks:
-            cb(value)
-
-    def _on_inputs_changed(self):
-        emitted = False
-        if self._on_inputs_done is not None:
-
-            def emit(value):
-                nonlocal emitted
-                emitted = True
-                for cb in self._callbacks:
-                    cb(value)
-
-            self._on_inputs_changed(emit)
-
-        return emitted
+    def _on_inputs_done(self):
+        if self._on_inputs_done_cb is not None:
+            self._on_inputs_done_cb()
 
 
 def value_list(list_of_values):
@@ -261,21 +288,18 @@ def value_list(list_of_values):
         will be represented by :py:class:`NoValue` in :py:attr:`value` or
         in callbacks resulting from other :py:class:`Value`\ s changing.
     """
-    output_value = Value([v.value for v in list_of_values])
+    result_list = [v.value for v in list_of_values]
 
     def element_changed(index, new_value):
-        output_value._value[index] = list_of_values[index].value
-
-        # Substitute in the instantaneous value of the changed element
-        instantaneous_value = output_value.value.copy()
-        instantaneous_value[index] = new_value
-
-        output_value.set_instantaneous_value(instantaneous_value)
+        result_list[index] = new_value
 
     for i, value in enumerate(list_of_values):
         value.on_value_changed(functools.partial(element_changed, i))
 
-    return output_value
+    def get_value():
+        return result_list.copy()
+
+    return Value(inputs=list_of_values, get_value=get_value)
 
 
 def value_tuple(tuple_of_values):
@@ -299,22 +323,18 @@ def value_tuple(tuple_of_values):
         will be represented by :py:class:`NoValue` in :py:attr:`value` or
         in callbacks resulting from other :py:class:`Value`\ s changing.
     """
-    output_value = Value(tuple(v.value for v in tuple_of_values))
+    result_list = [v.value for v in tuple_of_values]
 
     def element_changed(index, new_value):
-        output_value._value = tuple(v.value for v in tuple_of_values)
-
-        # Substitute in the instantaneous value of the changed element
-        instantaneous_value = tuple(
-            v.value if i != index else new_value for i, v in enumerate(tuple_of_values)
-        )
-
-        output_value.set_instantaneous_value(instantaneous_value)
+        result_list[index] = new_value
 
     for i, value in enumerate(tuple_of_values):
         value.on_value_changed(functools.partial(element_changed, i))
 
-    return output_value
+    def get_value():
+        return tuple(result_list)
+
+    return Value(inputs=tuple_of_values, get_value=get_value)
 
 
 def value_dict(dict_of_values):
@@ -339,20 +359,18 @@ def value_dict(dict_of_values):
         :py:attr:`value` or in callbacks resulting from other
         :py:class:`Value`\ s changing.
     """
-    output_value = Value({k: v.value for k, v in dict_of_values.items()})
+    result_dict = {k: v.value for k, v in dict_of_values.items()}
 
     def element_changed(key, new_value):
-        output_value._value[key] = dict_of_values[key].value
-
-        instantaneous_value = output_value.value.copy()
-        instantaneous_value[key] = new_value
-
-        output_value.set_instantaneous_value(instantaneous_value)
+        result_dict[key] = new_value
 
     for key, value in dict_of_values.items():
         value.on_value_changed(functools.partial(element_changed, key))
 
-    return output_value
+    def get_value():
+        return result_dict.copy()
+
+    return Value(inputs=tuple(dict_of_values.values()), get_value=get_value)
 
 
 def ensure_value(value):
@@ -378,27 +396,19 @@ def ensure_value(value):
         return Value(value)
 
 
-def make_instantaneous(source_value):
-    """
-    Make a persistent :py:class`Value` into an instantaneous one which 'fires'
-    whenever the persistant value is changed.
-    """
-    output_value = Value()
-    ensure_value(source_value).on_value_changed(output_value.set_instantaneous_value)
-    return output_value
+def value_to_event(source_value):
+    """make an Event which emits the new value of source_value whenever it changes"""
+    event = Event(inputs=(source_value,))
+    source_value.on_value_changed(event.emit)
+    return event
 
 
-def make_persistent(source_value, initial_value=NoValue):
-    """
-    Make an instantaneous :py:class:`Value` into a persistant one, keeping the old value
-    between changes. Initially sets the :py:class:`Value` to ``initial_value``.
-    """
+def event_to_value(source_event, initial_value=NoValue):
+    """make a Value which takes its value from events of source_event"""
+    value = Value(initial_value=initial_value, inputs=(source_event,))
 
-    output_value = Value(initial_value)
-    source_value = ensure_value(source_value)
+    @source_event.on_event
+    def _(new_value):
+        value.value = new_value
 
-    @source_value.on_value_changed
-    def on_source_value_changed(new_value):
-        output_value.value = new_value
-
-    return output_value
+    return value
