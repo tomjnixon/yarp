@@ -2,7 +2,7 @@
 General purpose utility functions for manipulating :py:class:`Value` values.
 """
 
-from yarp import NoValue, Value, fn, ensure_value
+from yarp import NoValue, Value, Event, fn, ensure_value
 
 __names__ = [
     "window",
@@ -12,40 +12,38 @@ __names__ = [
 ]
 
 
-def window(source_value, num_values):
-    """Produce a moving window over a :py:class:`Value`'s historical values.
+def window(source_value: Value | Event, num_values: int | Value) -> Value:
+    """make a Value with the num_values most recent values or events from
+    source_value
 
-    This function treats the Value it is passed as a persistent Value, even if
-    it is instantaneous (since a window function doesn't really have any
-    meaning for a instantaneous values).
-
-    The ``num_values`` argument may be a (persistent) Value or a constant
-    indicating the number of entries in the window. If this value later
-    reduced, the contents of the window will be truncated immediately. If it is
-    increaesd, any previously dropped values will not return.  ``num_values``
-    is always assumed to be an integer greater than zero and never ``NoValue``.
+    If num_values is decreased then the return value will be cropped. If it is
+    increased, then the return value will lengthen gradually with new events or
+    changes.
     """
-    source_value = ensure_value(source_value)
-    output_value = Value([source_value.value])
-
     num_values = ensure_value(num_values)
-    assert num_values.value >= 1
 
-    @source_value.on_value_changed
-    def on_source_value_changed(new_value):
-        """Internal. Insert incoming Value into the window."""
-        output_value.value = (output_value.value + [new_value])[-num_values.value :]
+    output_values = []
 
     @num_values.on_value_changed
-    def on_num_values_changed(_instantaneous_new_num_values):
-        """Internal. Handle window size changes."""
-        # Truncate the window data if required
-        new_num_values = num_values.value
-        assert new_num_values >= 1
-        if len(output_value.value) > new_num_values:
-            output_value.value = output_value.value[-new_num_values:]
+    def limit_values(num_values_value):
+        while len(output_values) > num_values_value:
+            output_values.pop(0)
 
-    return output_value
+    def add_value(new_value):
+        output_values.append(new_value)
+        limit_values(num_values.value)
+
+    match source_value:
+        case Event():
+            source_value.on_event(add_value)
+        case Value():
+            output_values.append(source_value.value)
+            source_value.on_value_changed(add_value)
+
+    return Value(
+        inputs=(source_value, num_values),
+        get_value=lambda: output_values.copy(),
+    )
 
 
 def no_repeat(source_value):
