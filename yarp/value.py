@@ -183,9 +183,8 @@ class Value(Reactive):
         self._on_value_changed = []
         self._get_value = get_value
 
-        if get_value is not None:
-            # there cannot be any callbacks or dependencies here
-            self._value = get_value()
+        # sets value to _get_value(), with conditions
+        self._on_inputs_done()
 
     @property
     def value(self):
