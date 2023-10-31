@@ -5,7 +5,7 @@ Wrappers for making reactive Python functions which accept and produce
 
 import functools
 
-from yarp import NoValue, Value, Event, Reactive
+from yarp import NoValue, NoChange, Value, Event, Reactive
 
 __names__ = [
     "fn",
@@ -60,7 +60,9 @@ def fn(f):
                 for values, key, value in event_buffer:
                     values[key] = value
 
-                    emit(f(*arg_values, **kwarg_values))
+                    ret = f(*arg_values, **kwarg_values)
+                    if ret is not NoChange:
+                        emit(ret)
 
                     values[key] = NoValue
 

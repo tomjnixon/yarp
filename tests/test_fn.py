@@ -1,6 +1,6 @@
 from mock import Mock
 
-from yarp import NoValue, Value, Event, fn, event_to_value
+from yarp import NoChange, NoValue, Value, Event, fn, event_to_value
 
 
 def test_no_args():
@@ -141,3 +141,45 @@ def test_mixed():
     m.reset_mock()
     e2.emit(6)
     m.assert_called_once_with((NoValue, 5, 6))
+
+
+def test_nochange_value():
+    v = Value(5)
+
+    @fn
+    def f(x):
+        return NoChange if x == 10 else x
+
+    vv = f(v)
+    vv.on_value_changed(m := Mock())
+
+    assert vv.value == 5
+
+    m.reset_mock()
+    v.value = 6
+    assert vv.value == 6
+    m.assert_called_once_with(6)
+
+    m.reset_mock()
+    v.value = 10
+    assert vv.value == 6
+    m.assert_not_called()
+
+
+def test_nochange_event():
+    e = Event()
+
+    @fn
+    def f(x):
+        return NoChange if x == 10 else x
+
+    ee = f(e)
+    ee.on_event(m := Mock())
+
+    m.reset_mock()
+    e.emit(6)
+    m.assert_called_once_with(6)
+
+    m.reset_mock()
+    e.emit(10)
+    m.assert_not_called()
