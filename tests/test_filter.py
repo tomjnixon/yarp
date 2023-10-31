@@ -2,7 +2,7 @@ import pytest
 
 from mock import Mock
 
-from yarp import NoValue, Value, filter, replace_novalue
+from yarp import NoValue, Event, Value, filter, replace_novalue
 from yarp.general import _check_value
 
 
@@ -69,18 +69,15 @@ def test_change_instantaneous():
     rule = lambda x: x < 10
 
     m = Mock()
-    v = Value()
-    fl = filter(v, rule)
-    fl.on_value_changed(m)
-    assert fl.value is NoValue
+    e = Event()
+    fl = filter(e, rule)
+    fl.on_event(m)
 
-    v.set_instantaneous_value(2)
-    assert fl.value is NoValue
+    e.emit(2)
     m.assert_called_once_with(2)
 
     # Above ten, shouldn't get through
-    v.set_instantaneous_value(100)
-    assert fl.value is NoValue
+    e.emit(100)
     m.assert_called_once_with(2)
 
 

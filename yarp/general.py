@@ -84,36 +84,23 @@ def _check_value(value, rule):
         return rule(value)
 
 
-def filter(source_value, rule=NoValue):
+@fn
+def filter(source, rule=NoValue):
     """Filter change events.
 
     The filter rule should be a function which takes the new value as an
     argument and returns a boolean indicating if the value should be passed on
     or not.
 
-    If the source value is persistent, the persistent value will remain
-    unchanged when a value change is not passed on.
+    If the source value is a Value, the old value will remain
+    unchanged when a value change is not passed on. If the initial value does
+    not pass the test, the initial value of the result will be NoValue.
 
     If the filter rule is ``None``, non-truthy values and ``NoValue`` will be
     filtered out. If the filter rule is ``NoValue`` (the default) only
     ``NoValue`` will be filtered out.
     """
-    source_value = ensure_value(source_value)
-    output_value = Value(
-        source_value.value
-        if (
-            source_value.value is not NoValue and _check_value(source_value.value, rule)
-        )
-        else NoValue
-    )
-
-    @source_value.on_value_changed
-    def on_source_value_changed(new_value):
-        if _check_value(new_value, rule):
-            output_value._value = source_value.value
-            output_value.set_instantaneous_value(new_value)
-
-    return output_value
+    return source if _check_value(source, rule) else NoChange
 
 
 @fn
