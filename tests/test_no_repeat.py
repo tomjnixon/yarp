@@ -1,9 +1,9 @@
 from mock import Mock
 
-from yarp import NoValue, Value, no_repeat
+from yarp import NoValue, Value, Event, no_repeat
 
 
-def test_no_repeat_persistent():
+def test_no_repeat_value():
     v = Value(1)
 
     # Initial value should come through
@@ -23,27 +23,23 @@ def test_no_repeat_persistent():
     m.assert_called_once_with(2)
 
 
-def test_no_repeat_instantaneous():
-    v = Value()
+def test_no_repeat_event():
+    v = Event()
 
     nrv = no_repeat(v)
-    assert nrv.value is NoValue
 
     m = Mock()
-    nrv.on_value_changed(m)
+    nrv.on_event(m)
 
     # New value should pass through
-    v.set_instantaneous_value(1)
+    v.emit(1)
     m.assert_called_once_with(1)
-    assert nrv.value is NoValue
 
     # Repeat should not
     m.reset_mock()
-    v.set_instantaneous_value(1)
+    v.emit(1)
     assert not m.called
-    assert nrv.value is NoValue
 
     # New value should pass through
-    v.set_instantaneous_value(2)
+    v.emit(2)
     m.assert_called_once_with(2)
-    assert nrv.value is NoValue

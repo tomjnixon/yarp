@@ -2,7 +2,8 @@
 General purpose utility functions for manipulating :py:class:`Value` values.
 """
 
-from yarp import NoValue, Value, Event, fn, ensure_value
+from yarp import NoChange, NoValue, Value, Event, fn, ensure_value
+
 
 __names__ = [
     "window",
@@ -46,28 +47,21 @@ def window(source_value: Value | Event, num_values: int | Value) -> Value:
     )
 
 
-def no_repeat(source_value):
-    r"""
-    Don't pass on change callbacks if the :py:class:`Value` hasn't changed.
+def no_repeat(source):
+    """don't repeat the previous event or value of source"""
+    last_value = object()
 
-    Works for both continuous and instantaneous :py:class:`Value`\ s.
-    """
-    source_value = ensure_value(source_value)
-    last_value = source_value.value
-
-    # Initially take on the source value
-    output_value = Value(last_value)
-
-    @source_value.on_value_changed
-    def on_source_value_changed(new_value):
+    @fn
+    def f(value):
         nonlocal last_value
-        if new_value != last_value:
-            last_value = new_value
-            # Copy to output whether continuous or instantaneous
-            output_value._value = source_value.value
-            output_value.set_instantaneous_value(new_value)
 
-    return output_value
+        if value != last_value:
+            last_value = value
+            return value
+        else:
+            return NoChange
+
+    return f(source)
 
 
 def _check_value(value, rule):
