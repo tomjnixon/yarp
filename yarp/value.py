@@ -76,6 +76,11 @@ class Reactive:
         # called when something external has changed this (e.g. by writing to
         # .value), and all dependents need to update too
         # XXX: fix lax weak dereference
+
+        if not self._dependencies:
+            # nothing to do, don't bloat this object with dependency information
+            return
+
         if self._all_dependencies is None or any(
             dep()._dependencies_version != expected_version
             for dep, expected_version in zip(
