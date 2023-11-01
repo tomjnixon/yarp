@@ -4,7 +4,7 @@ Temporal filters for :py:class:`Value` values.
 
 import asyncio
 
-from yarp import NoValue, Value, ensure_value
+from yarp import NoValue, Event, Value, ensure_value
 
 __names__ = [
     "delay",
@@ -88,88 +88,116 @@ def delay(source_value, delay_seconds, loop=None):
     return output_value
 
 
-def time_window(source_value, duration, loop=None):
-    """Produce a moving window over a :py:class:`Value`'s historical values
-    within a given time period.
+def time_window(source, duration_seconds):
+    """Produce a moving window over the historical values of a Value or the
+    events of an Event within a given time period.
 
-    This function treats the :py:class:`Value` it is passed as a persistent
-    :py:class:`Value`, even if it is instantaneous (since a window function
-    doesn't really have any meaning for an instantaneous value).
-
-    The ``duration`` may be a constant or a (persistent) Value giving the
-    window duration as a number of seconds. The duration should be a number of
-    seconds greater than zero and never be ``NoValue``. If the value is
-    reduced, previously inserted values will be expired earlier, possibly
-    immediately if they should already have expired. If the value is increased,
-    previously inserted values will have an increased timeout.
-
-    The ``loop`` argument should be an :py:class:`asyncio.BaseEventLoop` in
-    which windowing will be scheduled. If ``None``, the default loop is used.
+    ``duration_seconds`` may be a constant or a Value giving the window
+    duration as a number of seconds. The duration should be a number of seconds
+    greater than zero and never be ``NoValue``. If the value is reduced,
+    previously inserted values will be expired earlier, possibly immediately if
+    they should already have expired. If the value is increased, previously
+    inserted values will have an increased timeout.
     """
+    duration_seconds = ensure_value(duration_seconds)
 
-    source_value = ensure_value(source_value)
-    output_value = Value([source_value.value])
+    # tuples of (value, time)
+    # for values, time is when it changed to another value, or None for the current value
+    # for events, time is when it was emitted
+    seen_values = []
 
-    # A queue of (insertion_time, handle) pairs for calls to expire values currently
-    # in the window.
-    timers = []
+    # the strategy is to use one timer for the next value to be dropped
+    timer = None
+    # and store the time for which that timer will drop values, and the time
+    # when that timer will fire, so we know if it needs updating or not
+    timer_info = (None, None)
 
-    duration = ensure_value(duration)
-    loop = loop or asyncio.get_event_loop()
+    loop = asyncio.get_event_loop()
 
-    def expire_value():
-        """Internal. Removes a value from the window."""
-        timers.pop(0)
-        output_value.value = output_value.value[1:]
+    output = Value(inputs=(source, duration_seconds))
 
-    def schedule_value_expiration():
-        """
-        Internal. Drop a newly-inserted value from the window after the window
-        delay occurs.
-        """
+    def expire(exp_time):
+        """expire values at or before exp_time"""
+        updated = False
+        while (
+            seen_values
+            and seen_values[0][1] is not None
+            and seen_values[0][1] <= exp_time
+        ):
+            seen_values.pop(0)
+            updated = True
+        if updated:
+            output.value = [value for value, t in seen_values]
+
+    def cancel_timer():
+        """cancel the timer and clear the info"""
+        nonlocal timer, timer_info
+        if timer is not None:
+            timer.cancel()
+            timer = None
+            timer_info = (None, None)
+
+    def update_timer():
+        """set, clear or update the timer to take the next action at the right time"""
+        nonlocal timer, timer_info
+
+        next_exp_time = seen_values[0][1] if seen_values else None
+        next_exp_time_at = (
+            None if next_exp_time is None else next_exp_time + duration_seconds.value
+        )
+        next_timer_info = next_exp_time, next_exp_time_at
+
+        if timer_info != next_timer_info:
+            cancel_timer()
+
+            if next_exp_time_at is None:
+                return
+
+            def on_timer():
+                nonlocal timer, timer_info
+                timer = None
+                timer_info = (None, None)
+                expire(next_exp_time)
+                update_timer()
+
+            timer = loop.call_at(next_exp_time_at, on_timer)
+            timer_info = next_exp_time, next_exp_time_at
+
+    match source:
+        case Value():
+            seen_values.append((source.value, None))
+
+            @source.on_value_changed
+            def _(new_value):
+                # update the expiry time for the last value first
+                old_value, _none = seen_values[-1]
+                seen_values[-1] = old_value, loop.time()
+                seen_values.append((new_value, None))
+
+                output.value = [value for value, t in seen_values]
+                update_timer()
+
+        case Event():
+
+            @source.on_event
+            def _(event):
+                seen_values.append((event, loop.time()))
+
+                output.value = [value for value, t in seen_values]
+                update_timer()
+
+        case _:
+            assert False
+
+    output.value = [value for value, t in seen_values]
+
+    @duration_seconds.on_value_changed
+    def _(new_duration):
         now = loop.time()
-        t = now + duration.value
-        timers.append((now, loop.call_at(t, expire_value)))
+        expire(now - new_duration)
+        update_timer()
 
-    @source_value.on_value_changed
-    def on_source_value_changed(new_value):
-        """Internal. Adds the new value to the window when the input changes."""
-        output_value.value = output_value.value + [new_value]
-        schedule_value_expiration()
-
-    @duration.on_value_changed
-    def on_duration_changed(_instantaneous_new_duration):
-        """Internal. Handle changes in the specified window duration."""
-        nonlocal timers
-        # Immediately expire any values in the window older than the new
-        # duration.
-        now = loop.time()
-        new_duration = duration.value
-        while timers:
-            insertion_time, handle = timers[0]
-            age = now - insertion_time
-            if age > new_duration:
-                handle.cancel()
-                expire_value()  # Side effect: removes handle from timers
-            else:
-                # Since the _timers array is in order, as soon as we encounter
-                # a young enough timer, all others after it will be younger
-                # still.
-                break
-
-        # Modify the timeouts of all previously inserted values
-        def modify_timeout(insertion_time_and_handle):
-            insertion_time, handle = insertion_time_and_handle
-            handle.cancel()
-
-            return (
-                insertion_time,
-                loop.call_at(insertion_time + new_duration, expire_value),
-            )
-
-        timers = [modify_timeout(t) for t in timers]
-
-    return output_value
+    return output
 
 
 def rate_limit(source_value, min_interval=0.1, loop=None):
