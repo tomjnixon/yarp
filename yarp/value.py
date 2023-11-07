@@ -2,7 +2,7 @@ import functools
 import sentinel
 import warnings
 import weakref
-from contextvars import ContextVar
+import threading
 
 __names__ = [
     "NoValue",
@@ -24,7 +24,8 @@ A special value indicating that a ``yarp`` value has not been assigned a value.
 NoChange = sentinel.create("NoChange")
 
 
-_mark_changed = ContextVar("_mark_changed", default=None)
+_transaction_state = threading.local()
+_transaction_state.mark_changed = None
 
 
 class Reactive:
@@ -67,7 +68,7 @@ class Reactive:
 
     def _on_change(self):
         # call when this has changed and dependencies need to run
-        mark_changed = _mark_changed.get()
+        mark_changed = _transaction_state.mark_changed
         if mark_changed is None:
             self._on_external_change()
         else:
@@ -122,15 +123,18 @@ class Reactive:
                     f"untracked dependency from {self!r} (id {id(self)}) "
                     f"to {obj!r} (id {id(obj)})"
                 )
+                return False
             else:
                 if not tmp_changed[idx]:
                     tmp_changed[idx] = True
                     for dep_idx in dependent_idxes[idx]:
                         tmp_to_run[dep_idx] = True
+                return True
 
         mark_changed(self)
 
-        token = _mark_changed.set(mark_changed)
+        old_mark_changed = _transaction_state.mark_changed
+        _transaction_state.mark_changed = mark_changed
 
         try:
             for i in range(1, len(self._all_dependencies)):
@@ -139,7 +143,7 @@ class Reactive:
                     if dep is not None:
                         dep._on_inputs_done()
         finally:
-            _mark_changed.reset(token)
+            _transaction_state.mark_changed = old_mark_changed
 
     def _add_dependency(self, dependency):
         self._dependencies.append(weakref.ref(dependency, self._remove_dependency))
