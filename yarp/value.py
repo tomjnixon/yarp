@@ -72,7 +72,8 @@ class Reactive:
         if mark_changed is None:
             self._on_external_change()
         else:
-            mark_changed(self)
+            if not mark_changed(self):
+                self._on_external_change()
 
     def _on_external_change(self):
         # called when something external has changed this (e.g. by writing to
