@@ -13,81 +13,6 @@ __names__ = [
 ]
 
 
-def delay(source_value, delay_seconds, loop=None):
-    r"""
-    Produce a time-delayed version of a :py:class:`Value`.
-
-    Supports both instantaneous and continous :py:class:`Values`. For
-    continuous :py:class:`Value`\ s, the initial value is set immediately.
-
-    The ``delay_seconds`` argument may be a constant or a Value giving the
-    number of seconds to delay value changes. If it is increased, previously
-    delayed values will be delayed further. If it is decreased, values which
-    should already have been output will be output rapidly one after another.
-
-    The ``loop`` argument should be an :py:class:`asyncio.BaseEventLoop` in
-    which the delays will be scheduled. If ``None``, the default loop is used.
-    """
-
-    source_value = ensure_value(source_value)
-    delay_seconds = ensure_value(delay_seconds)
-    output_value = Value(source_value.value)
-
-    # An array of (insertion_time, value, instantaneous_value, handle)
-    # tuples for values due to be sent.
-    timers = []
-
-    loop = loop or asyncio.get_event_loop()
-
-    def pop_value():
-        """Internal. Outputs a previously delayed value."""
-        insertion_time, value, instantaneous_value, handle = timers.pop(0)
-        output_value._value = value
-        output_value.set_instantaneous_value(instantaneous_value)
-
-    @source_value.on_value_changed
-    def on_source_value_changed(instantaneous_value):
-        """Internal. Schedule an incoming value to be output later."""
-        insertion_time = loop.time()
-        handle = loop.call_at(insertion_time + delay_seconds.value, pop_value)
-        timers.append((insertion_time, source_value.value, instantaneous_value, handle))
-
-    @delay_seconds.on_value_changed
-    def on_delay_seconds_changed(new_delay_seconds):
-        """Internal. Handle the delay changing."""
-        nonlocal timers
-
-        now = loop.time()
-        max_age = delay_seconds.value
-
-        # Expire any delayed values which should have been removed by now
-        while timers:
-            insertion_time, value, instantaneous_value, handle = timers[0]
-            age = now - insertion_time
-            if age >= max_age:
-                handle.cancel()
-                pop_value()
-            else:
-                # If this timer is young enough, all others inserted after it
-                # must also be young enough.
-                break
-
-        # Update the timeouts of the remaining timers
-        def update_timer(it_v_iv_h):
-            insertion_time, value, instantaneous_value, handle = it_v_iv_h
-            handle.cancel()
-            return (
-                insertion_time,
-                value,
-                instantaneous_value,
-                loop.call_at(insertion_time + delay_seconds.value, pop_value),
-            )
-
-        timers = list(map(update_timer, timers))
-
-    return output_value
-
-
 def emit_at(time) -> Event:
     """emit an event at the times given in time
 
@@ -144,6 +69,71 @@ def emit_at(time) -> Event:
     event._keep_alive = time  # XXX
 
     return event
+
+
+def delay(source, delay_seconds):
+    r"""
+    Produce a time-delayed version of a :py:class:`Value` or :py:class:`Event`.
+
+    For :py:class:`Value`\ s, the initial value is set immediately.
+
+    The ``delay_seconds`` argument may be a constant or a Value giving the
+    number of seconds to delay value changes. If it is increased, previously
+    delayed values will be delayed further. If it is decreased, values which
+    should already have been output will be output rapidly one after another.
+    """
+    delay_seconds = ensure_value(delay_seconds)
+    loop = asyncio.get_event_loop()
+
+    values_and_times = Value([], inputs=(source, delay_seconds))
+
+    match source:
+        case Value():
+            output = Value(source.value)
+
+            def emit(value):
+                output.value = value
+
+            on_input = source.on_value_changed
+        case Event():
+            output = Event()
+            emit = output.emit
+            on_input = source.on_event
+        case _:
+            assert False
+
+    @on_input
+    def _(value):
+        values_and_times.value = values_and_times.value + [(value, loop.time())]
+
+    @fn
+    def next_time(values_and_times, delay_seconds):
+        return values_and_times[0][1] + delay_seconds if values_and_times else None
+
+    timer = emit_at(next_time(values_and_times, delay_seconds))
+
+    @timer.on_event
+    def pop_one(_ev):
+        emit(values_and_times.value[0][0])
+        values_and_times.value = values_and_times.value[1:]
+
+    @delay_seconds.on_value_changed
+    def on_delay_changed(new_delay):
+        # drop and emit values that should have expired already. this is only
+        # needed to make the values come out in the same asyncio time step
+        vt = values_and_times.value.copy()
+        changed = False
+        expiry_time = loop.time() - new_delay
+
+        while vt and vt[0][1] <= expiry_time:
+            emit(vt.pop(0)[0])
+            changed = True
+
+        if changed:
+            values_and_times.value = vt
+
+    output._keep_alive = timer  # XXX
+    return output
 
 
 def time_window(source, duration_seconds):

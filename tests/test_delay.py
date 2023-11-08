@@ -4,7 +4,7 @@ import time
 
 from mock import Mock
 
-from yarp import NoValue, Value, delay
+from yarp import Event, Value, delay
 
 
 class TestDelayPersistent(object):
@@ -31,7 +31,7 @@ class TestDelayPersistent(object):
     @pytest.fixture
     def dv(self, v, dt, log, sem, event_loop):
         """Delayed value"""
-        dv = delay(v, dt, loop=event_loop)
+        dv = delay(v, dt)
 
         def on_change(value):
             log.append((event_loop.time(), value))
@@ -130,22 +130,20 @@ class TestDelayPersistent(object):
 class TestDelayInstantaneous(object):
     @pytest.mark.asyncio
     async def test_instantaneous(self):
-        value = Value()
+        value = Event()
 
         delayed_value = delay(value, 0.1)
-        assert delayed_value.value is NoValue
+        assert isinstance(delayed_value, Event)
 
         # Monitor changes
         evt = asyncio.Event()
         m = Mock(side_effect=lambda *_: evt.set())
-        delayed_value.on_value_changed(m)
+        delayed_value.on_event(m)
 
         # Trigger a change for later...
         before = time.time()
-        value.set_instantaneous_value(123)
-        assert delayed_value.value is NoValue
+        value.emit(123)
         assert not m.mock_calls
         await evt.wait()
         assert time.time() - before >= 0.1
         m.assert_called_once_with(123)
-        assert delayed_value.value is NoValue
