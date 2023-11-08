@@ -159,103 +159,64 @@ def time_window(source, duration_seconds):
     """
     duration_seconds = ensure_value(duration_seconds)
 
-    # tuples of (value, time)
-    # for values, time is when it changed to another value, or None for the current value
-    # for events, time is when it was emitted
-    seen_values = []
-
-    # the strategy is to use one timer for the next value to be dropped
-    timer = None
-    # and store the time for which that timer will drop values, and the time
-    # when that timer will fire, so we know if it needs updating or not
-    timer_info = (None, None)
-
     loop = asyncio.get_event_loop()
 
-    output = Value(inputs=(source, duration_seconds))
+    # value containing a list of values and the time at which they were last
+    # seen. the time may be None for the current value of a Value
+    values_and_times = Value([], inputs=(source, duration_seconds))
 
-    def expire(exp_time):
-        """expire values at or before exp_time"""
-        updated = False
-        while (
-            seen_values
-            and seen_values[0][1] is not None
-            and seen_values[0][1] <= exp_time
-        ):
-            seen_values.pop(0)
-            updated = True
-        if updated:
-            output.value = [value for value, t in seen_values]
+    @fn
+    def to_values(values_and_times):
+        return [value for value, time in values_and_times]
 
-    def cancel_timer():
-        """cancel the timer and clear the info"""
-        nonlocal timer, timer_info
-        if timer is not None:
-            timer.cancel()
-            timer = None
-            timer_info = (None, None)
+    @fn
+    def next_time_to_pop(values_and_times, duration_seconds):
+        if values_and_times and values_and_times[0][1] is not None:
+            return values_and_times[0][1] + duration_seconds
+        else:
+            return None
 
-    def update_timer():
-        """set, clear or update the timer to take the next action at the right time"""
-        nonlocal timer, timer_info
+    pop_event = emit_at(next_time_to_pop(values_and_times, duration_seconds))
+    values_and_times._keep_alive = pop_event  # XXX
 
-        next_exp_time = seen_values[0][1] if seen_values else None
-        next_exp_time_at = (
-            None if next_exp_time is None else next_exp_time + duration_seconds.value
-        )
-        next_timer_info = next_exp_time, next_exp_time_at
+    @pop_event.on_event
+    def pop_one_value(_value):
+        values_and_times.value = values_and_times.value[1:]
 
-        if timer_info != next_timer_info:
-            cancel_timer()
+    @duration_seconds.on_value_changed
+    def drop_expired_values(new_duration):
+        expiry_time = loop.time() - new_duration
 
-            if next_exp_time_at is None:
-                return
+        vt = values_and_times.value.copy()
+        while vt and vt[0][1] is not None and vt[0][1] <= expiry_time:
+            vt.pop(0)
 
-            def on_timer():
-                nonlocal timer, timer_info
-                timer = None
-                timer_info = (None, None)
-                expire(next_exp_time)
-                update_timer()
-
-            timer = loop.call_at(next_exp_time_at, on_timer)
-            timer_info = next_exp_time, next_exp_time_at
+        if len(vt) < len(values_and_times.value):
+            values_and_times.value = vt
 
     match source:
         case Value():
-            seen_values.append((source.value, None))
+            values_and_times.value = [(source.value, None)]
 
             @source.on_value_changed
             def _(new_value):
                 # update the expiry time for the last value first
-                old_value, _none = seen_values[-1]
-                seen_values[-1] = old_value, loop.time()
-                seen_values.append((new_value, None))
-
-                output.value = [value for value, t in seen_values]
-                update_timer()
+                old_value, _old_time = values_and_times.value[-1]
+                values_and_times.value = values_and_times.value[:-1] + [
+                    (old_value, loop.time()),
+                    (new_value, None),
+                ]
 
         case Event():
 
             @source.on_event
             def _(event):
-                seen_values.append((event, loop.time()))
-
-                output.value = [value for value, t in seen_values]
-                update_timer()
+                values_and_times.value = values_and_times.value + [(event, loop.time())]
 
         case _:
             assert False
 
-    output.value = [value for value, t in seen_values]
-
-    @duration_seconds.on_value_changed
-    def _(new_duration):
-        now = loop.time()
-        expire(now - new_duration)
-        update_timer()
-
-    return output
+    return to_values(values_and_times)
 
 
 def rate_limit(source_value, min_interval=0.1, loop=None):
