@@ -269,7 +269,7 @@ class Event(Reactive):
     def emit(self, value):
         for cb in self._callbacks:
             cb(value)
-        self._on_external_change()
+        self._on_change()
 
     def _on_inputs_done(self):
         if self._on_inputs_done_cb is not None:
