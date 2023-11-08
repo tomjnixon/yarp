@@ -4,7 +4,7 @@ Temporal filters for :py:class:`Value` values.
 
 import asyncio
 
-from yarp import NoValue, Event, Value, ensure_value
+from yarp import NoValue, Event, Value, ensure_value, fn
 
 __names__ = [
     "delay",
@@ -86,6 +86,64 @@ def delay(source_value, delay_seconds, loop=None):
         timers = list(map(update_timer, timers))
 
     return output_value
+
+
+def emit_at(time) -> Event:
+    """emit an event at the times given in time
+
+    time can be None (no events), a time in seconds as given by loop.time()
+    (emit None at the given time), or a tuple containing the time and the value
+    to emit
+
+    whenever time changes the timer is reloaded, so if the timer for the
+    previous value has not fired, it never will. this also means that if the
+    time changes to be before the current time, there will be one event per
+    change
+
+    this is mostly useful in cases where you can calculate the next time that
+    something should happen from on some value
+    """
+    time = ensure_value(time)
+
+    event = Event()
+
+    timer = None
+    timer_time = None
+    timer_emit = None
+
+    loop = asyncio.get_event_loop()
+
+    def on_timer():
+        nonlocal timer, timer_time, timer_emit
+        # clear first in case emitting the event causes setup_timer to be called
+        to_emit = timer_emit
+        timer, timer_time, timer_emit = None, None, None
+
+        event.emit(to_emit)
+
+    def setup_timer(value):
+        nonlocal timer, timer_time, timer_emit
+        if not isinstance(value, tuple):
+            value = (value, None)
+
+        new_time, new_emit = value
+        assert new_time is None or isinstance(new_time, (float, int))
+
+        if (new_time, new_emit) != (timer_time, timer_emit):
+            if timer is not None:
+                timer.cancel()
+                timer = None
+
+            timer_time, timer_emit = new_time, new_emit
+
+            if new_time is not None:
+                timer = loop.call_at(new_time, on_timer)
+
+    setup_timer(time.value)
+    time.on_value_changed(setup_timer)
+    event._keep_alive = time  # XXX
+
+    return event
 
 
 def time_window(source, duration_seconds):
