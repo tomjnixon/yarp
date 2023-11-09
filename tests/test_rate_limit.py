@@ -4,7 +4,7 @@ import time
 
 from mock import Mock
 
-from yarp import NoValue, Value, rate_limit
+from yarp import Event, NoValue, Value, rate_limit
 
 
 @pytest.mark.asyncio
@@ -62,11 +62,11 @@ async def test_rate_limit_persistent():
 
 @pytest.mark.asyncio
 async def test_rate_limit_instantaneous():
-    v = Value()
+    v = Event()
 
     # No initial value to speak of
     rlv = rate_limit(v, 0.1)
-    assert rlv.value is NoValue
+    assert isinstance(rlv, Event)
 
     log = []
     sem = asyncio.Semaphore(0)
@@ -75,47 +75,41 @@ async def test_rate_limit_instantaneous():
         log.append(new_value)
         sem.release()
 
-    rlv.on_value_changed(on_change)
+    rlv.on_event(on_change)
 
     # First change should make it through immediately
-    v.set_instantaneous_value(1)
-    assert rlv.value is NoValue
+    v.emit(1)
     assert len(log) == 1
     assert log[-1] == 1
     await sem.acquire()
 
     # Another change made immediately after should be delayed
-    v.set_instantaneous_value(2)
-    assert rlv.value is NoValue
+    v.emit(2)
     assert len(log) == 1
 
     # Change should come through after a delay
     before = time.time()
     await sem.acquire()
     assert time.time() - before >= 0.1
-    assert rlv.value is NoValue
     assert len(log) == 2
     assert log[-1] == 2
 
     # After a suitable delay, the next change should come through immediately
     await asyncio.sleep(0.15)
-    v.set_instantaneous_value(3)
-    assert rlv.value is NoValue
+    v.emit(3)
     assert len(log) == 3
     assert log[-1] == 3
     await sem.acquire()
 
     # A rapid succession of calls should result in only the last value
     # comming out, and then only after a delay
-    v.set_instantaneous_value(4)
-    v.set_instantaneous_value(5)
-    v.set_instantaneous_value(6)
-    assert rlv.value is NoValue
+    v.emit(4)
+    v.emit(5)
+    v.emit(6)
     assert len(log) == 3
     before = time.time()
     await sem.acquire()
     assert time.time() - before >= 0.1
-    assert rlv.value is NoValue
     assert len(log) == 4
     assert log[-1] == 6
 
@@ -160,16 +154,19 @@ async def test_rate_limit_min_interval_change():
     assert log[-1] == 1234
 
     # Also, should be able to shorten the blocking period to shorter than has
-    # already ellapsed and the value should emmerge immediately
+    # already ellapsed and the value should emmerge immediately (in the next
+    # asyncio loop, for implementation simplicity / zalgo containment)
     v.value = 4321
     assert rlv.value == 1234
     await asyncio.sleep(0.05)
     assert rlv.value == 1234
     mi.value = 0.025
+    start = time.time()
+    await sem.acquire()
+    assert time.time() - start < 0.025
     assert rlv.value == 4321
     assert len(log) == 3
     assert log[-1] == 4321
-    await sem.acquire()
 
     # If we ensure blocking is not occurring, changing the time shouldn't cause
     # problems

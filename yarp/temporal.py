@@ -209,105 +209,72 @@ def time_window(source, duration_seconds):
     return to_values(values_and_times)
 
 
-def rate_limit(source_value, min_interval=0.1, loop=None):
+def rate_limit(source, min_interval=0.1):
     """Prevent changes occurring above a particular rate, dropping or
     postponing changes if necessary.
+
+    ``source`` may be a Value or Event.
 
     The ``min_interval`` argument may be a constant or a :py:class:`Value`. If
     this value is decreased, currently delayed values will be output early (or
     immediately if the value would have been output previously). If increased,
     the current delay will be increased.
-
-    The ``loop`` argument should be an :py:class:`asyncio.BaseEventLoop` in
-    which the delays will be scheduled. If ``None``, the default loop is used.
     """
+    loop = asyncio.get_event_loop()
 
-    source_value = ensure_value(source_value)
-    output_value = Value(source_value.value)
+    # the start time of the current block if one is active
+    block_time = Value(None)
+    has_value = False  # was there a value in the current block?
+    next_value = None  # if so, what is it?
 
-    min_interval = ensure_value(min_interval)
-    loop = loop or asyncio.get_event_loop()
+    match source:
+        case Value():
+            output = Value(source.value)
 
-    # The last value to be received from the source
-    last_value = None
+            def emit(value):
+                output.value = value
 
-    # Was last_value blocked from being sent due to the rate limit?
-    last_value_blocked = False
+            on_input = source.on_value_changed
+            block_time.value = loop.time()
+        case Event():
+            output = Event()
+            emit = output.emit
+            on_input = source.on_event
+        case _:
+            assert False
 
-    # The time (according to asyncio) the last blockage started. The
-    # blockage will be cleared min_interval.delay seconds after this
-    # time.
-    last_block_start = None
-
-    # The asyncio timer handle for the current blockage timer
-    timer_handle = None
-
-    # Is the rate limit currently being applied? (Initially yes for
-    # persistant values, otherwise no)
-    blocked = source_value.value is not NoValue
-
-    def clear_blockage():
-        """Internal. Timeout expired callback."""
-        nonlocal blocked, last_value, last_value_blocked, last_block_start, timer_handle
-        if last_value_blocked:
-            # Pass the delayed value through
-            output_value._value = source_value.value
-            output_value.set_instantaneous_value(last_value)
-            last_value = None
-            last_value_blocked = False
-
-            # Start the blockage again
-            block()
+    @on_input
+    def _(value):
+        nonlocal has_value, next_value
+        if block_time.value is not None:
+            # blocking, save until end
+            next_value = value
+            has_value = True
         else:
-            # No values queued up, just unblock
-            blocked = False
-            last_block_start = None
-            timer_handle = None
+            # not blocking, emit and start blocking
+            emit(value)
+            block_time.value = loop.time()
 
-    def block():
-        """Setup a timer to unblock the rate_limit and output the last
-        value."""
-        nonlocal blocked, last_block_start, timer_handle
-        blocked = True
-        last_block_start = loop.time()
-        timer_handle = loop.call_at(
-            last_block_start + min_interval.value, clear_blockage
-        )
+    @fn
+    def block_end_time(block_time, min_interval):
+        return None if block_time is None else block_time + min_interval
 
-    @source_value.on_value_changed
-    def on_source_value_changed(new_value):
-        nonlocal last_value, last_value_blocked
-        if not blocked:
-            # Pass the value change through
-            output_value._value = source_value.value
-            output_value.set_instantaneous_value(new_value)
+    block_end_event = emit_at(block_end_time(block_time, min_interval))
 
-            # Start a timeout
-            block()
+    @block_end_event.on_event
+    def end_block(_value):
+        nonlocal has_value, next_value
+        if has_value:
+            # had a value in this block, emit it and start a new block
+            emit(next_value)
+            has_value = False
+            next_value = None
+
+            block_time.value = loop.time()
         else:
-            # Keep the value back until we're unblocked
-            last_value = new_value
-            last_value_blocked = True
+            # no value in this block, stop blocking
+            block_time.value = None
 
-    @min_interval.on_value_changed
-    def on_min_interval_changed(instantaneous_min_interval):
-        nonlocal timer_handle
-        now = loop.time()
-        if not blocked:
-            # No blockage in progress, nothing to do
-            pass
-        elif now - last_block_start >= min_interval.value:
-            # New timeout has already expired, unblock immediately
-            timer_handle.cancel()
-            clear_blockage()
-        else:
-            # Reset timer for new time
-            timer_handle.cancel()
-            timer_handle = loop.call_at(
-                last_block_start + min_interval.value, clear_blockage
-            )
+    output._keep_alive = block_end_event  # XXX
 
-    if blocked:
-        block()
-
-    return output_value
+    return output
