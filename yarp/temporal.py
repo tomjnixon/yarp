@@ -27,7 +27,7 @@ def emit_at(time) -> Event:
     change
 
     this is mostly useful in cases where you can calculate the next time that
-    something should happen from on some value
+    something should happen from some Value
     """
     time = ensure_value(time)
 
