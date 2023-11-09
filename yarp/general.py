@@ -3,6 +3,7 @@ General purpose utility functions for manipulating :py:class:`Value` values.
 """
 
 from yarp import NoChange, NoValue, Value, Event, fn, ensure_value
+from ._utils import on_value
 
 
 __names__ = [
@@ -34,12 +35,7 @@ def window(source_value: Value | Event, num_values: int | Value) -> Value:
         output_values.append(new_value)
         limit_values(num_values.value)
 
-    match source_value:
-        case Event():
-            source_value.on_event(add_value)
-        case Value():
-            output_values.append(source_value.value)
-            source_value.on_value_changed(add_value)
+    on_value(source_value, add_value)
 
     return Value(
         inputs=(source_value, num_values),

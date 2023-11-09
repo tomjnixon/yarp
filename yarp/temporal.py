@@ -5,6 +5,7 @@ Temporal filters for :py:class:`Value` values.
 import asyncio
 
 from yarp import NoValue, Event, Value, ensure_value, fn
+from ._utils import make_same_type, emit_fn, on_value
 
 __names__ = [
     "delay",
@@ -87,22 +88,10 @@ def delay(source, delay_seconds):
 
     values_and_times = Value([], inputs=(source, delay_seconds))
 
-    match source:
-        case Value():
-            output = Value(source.value)
+    output = make_same_type(source)
+    emit = emit_fn(output)
 
-            def emit(value):
-                output.value = value
-
-            on_input = source.on_value_changed
-        case Event():
-            output = Event()
-            emit = output.emit
-            on_input = source.on_event
-        case _:
-            assert False
-
-    @on_input
+    @on_value(source, current=False)
     def _(value):
         values_and_times.value = values_and_times.value + [(value, loop.time())]
 
@@ -227,23 +216,10 @@ def rate_limit(source, min_interval=0.1):
     has_value = False  # was there a value in the current block?
     next_value = None  # if so, what is it?
 
-    match source:
-        case Value():
-            output = Value(source.value)
+    output = make_same_type(source, inputs=(source,), initial_value=NoValue)
+    emit = emit_fn(output)
 
-            def emit(value):
-                output.value = value
-
-            on_input = source.on_value_changed
-            block_time.value = loop.time()
-        case Event():
-            output = Event()
-            emit = output.emit
-            on_input = source.on_event
-        case _:
-            assert False
-
-    @on_input
+    @on_value(source)
     def _(value):
         nonlocal has_value, next_value
         if block_time.value is not None:
