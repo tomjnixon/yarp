@@ -1,0 +1,3 @@
+[tool.pytest.ini_options]
+doctest_optionflags = "ELLIPSIS"
+addopts = "--doctest-glob=*.md --doctest-glob=*.rst --doctest-modules"
