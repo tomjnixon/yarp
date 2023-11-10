@@ -1,4 +1,4 @@
-.. module:: yarp
+.. currentmodule:: yarp
 
 Creating impure Values
 ======================
