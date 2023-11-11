@@ -106,6 +106,9 @@ def delay(source, delay_seconds):
         emit(values_and_times.value[0][0])
         values_and_times.value = values_and_times.value[1:]
 
+    values_and_times.add_input(timer)
+    output.add_input(timer)
+
     @delay_seconds.on_value_changed
     def on_delay_changed(new_delay):
         # drop and emit values that should have expired already. this is only
@@ -121,7 +124,6 @@ def delay(source, delay_seconds):
         if changed:
             values_and_times.value = vt
 
-    output._keep_alive = timer  # XXX
     return output
 
 
@@ -156,7 +158,7 @@ def time_window(source, duration_seconds):
             return None
 
     pop_event = emit_at(next_time_to_pop(values_and_times, duration_seconds))
-    values_and_times._keep_alive = pop_event  # XXX
+    values_and_times.add_input(pop_event)
 
     @pop_event.on_event
     def pop_one_value(_value):
@@ -251,6 +253,7 @@ def rate_limit(source, min_interval=0.1):
             # no value in this block, stop blocking
             block_time.value = None
 
-    output._keep_alive = block_end_event  # XXX
+    output.add_input(block_end_event)
+    block_time.add_input(block_end_event)
 
     return output
