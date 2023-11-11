@@ -22,6 +22,9 @@ A special value indicating that a ``yarp`` value has not been assigned a value.
 """
 
 NoChange = sentinel.create("NoChange")
+"""
+a value returned by callbacks indicating that no change should be made to a value
+"""
 
 
 _transaction_state = threading.local()
