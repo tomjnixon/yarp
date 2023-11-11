@@ -185,6 +185,29 @@ class Reactive:
 
 
 class Value(Reactive):
+    """represents a value that changes over time
+
+    Parameters
+    ----------
+    initial_value
+        the value of this object on construction
+    inputs : Iterable[Reactive]
+        other reactive objects (`Value` or `Event`) whose changes cause the
+        value of this object to be updated, either through ``get_value``, or
+        assignment to `value` inside their `on_value_changed` or
+        `Event.on_event` callbacks
+    get_value : Callable[[], Any]
+        a callback which when called with no arguments returns a new value for
+        this object
+
+        If provided, this is called during construction (overriding
+        ``initial_value``), and once after all objects specified in ``inputs``
+        have finished updating in a transaction.
+
+        This may return `NoChange`, in which case `value` will not be updated.
+
+    """
+
     def __init__(self, initial_value=NoValue, inputs=(), get_value=None):
         super(Value, self).__init__(inputs)
 
@@ -198,20 +221,13 @@ class Value(Reactive):
     @property
     def value(self):
         """
-        A property holding the current continuous value held by this object. If
-        not yet set, or if this object represents only instantaneous values,
-        this will be ``NoValue``.
+        the current value of this object
 
-        Setting this property sets the (continuous) contents of this value
-        (raising the :py:meth:`on_value_changed` callback afterwards).
+        If not yet set (either in the constructor or by assigning to this
+        property), this will be ``NoValue``.
 
-        To change the value without raising a callback, set the
-        :py:attr:`_value` attribute directly. This may be useful if you wish to
-        make this Value mimic another by, in a callback function, setting
-        :py:attr:`_value` in this Value directly from the other Value's
-        :py:attr:`value` and calling :py:meth:`set_instantaneous_value` with
-        the passed variable explicitly. You must always be sure to call
-        :py:meth:`set_instantaneous_value` after changing :py:attr:`_value`.
+        Setting this property will call the :py:class:`on_value_changed`
+        callbacks.
         """
         return self._value
 
@@ -224,7 +240,7 @@ class Value(Reactive):
 
     def on_value_changed(self, cb):
         """
-        Registers ``callback`` as a callback function to be called when this
+        Registers ``cb`` as a callback function to be called when this
         value changes.
 
         The callback function will be called with a single argument: the value
