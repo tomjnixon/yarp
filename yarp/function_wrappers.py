@@ -100,7 +100,7 @@ def fn(f):
     with the transaction processing.
 
     The major downside is the inability to use some overloads on events (e.g.
-    `e ** 2 + e`) -- just use a fn for that kind of thing
+    ``e ** 2 + e``) -- just use a fn for that kind of thing.
 
     If a different behaviour is needed, either write it manually, write
     something which merges events in the way you need (then process the result
