@@ -4,7 +4,7 @@ Implementations of native Python operations on :py:class:`Value` objects.
 
 from functools import wraps
 
-from yarp.function_wrappers import Value, fn
+from yarp.function_wrappers import Reactive, fn
 
 import operator
 import builtins
@@ -165,7 +165,7 @@ for function_name, native_function, doc in value_operators:
     continous.__doc__ = "{} (returning a continous Value)".format(doc)
 
     # Add to Value class as operator implementations
-    setattr(Value, function_name, continous)
+    setattr(Reactive, function_name, continous)
 
 
 __names__ = [name for name, _, _ in wrapped_functions]
