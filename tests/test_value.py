@@ -212,3 +212,36 @@ def test_event_to_value():
     e.emit(2)
     assert v.value == 2
     m.assert_called_once_with(2)
+
+
+def test_dep_ordering():
+    def add(value, event):
+        event_buf = []
+        event.on_event(event_buf.append)
+
+        def on_inputs_done(emit):
+            for ev in event_buf:
+                emit(value.value + ev)
+            event_buf.clear()
+
+        return Event(inputs=(value, event), on_inputs_done=on_inputs_done)
+
+    # this particular structure if guaranteed to be broken if add doesn't use
+    # on_inputs_done
+
+    e = Event()
+
+    ee = Event(inputs=(e,))
+    e.on_event(ee.emit)
+
+    v = event_to_value(e, initial_value=0)
+
+    s = add(v, ee)
+    results = []
+    s.on_event(results.append)
+
+    e.emit(2)
+    assert results == [4]
+
+    e.emit(3)
+    assert results == [4, 6]
