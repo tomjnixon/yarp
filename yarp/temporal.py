@@ -88,7 +88,7 @@ def delay(source, delay_seconds):
 
     values_and_times = Value([], inputs=(source, delay_seconds))
 
-    output = make_same_type(source)
+    output = make_same_type(source, inputs=(delay_seconds,))
     emit = emit_fn(output)
 
     @on_value(source, current=False)
@@ -212,7 +212,7 @@ def rate_limit(source, min_interval=0.1):
     loop = asyncio.get_event_loop()
 
     # the start time of the current block if one is active
-    block_time = Value(None)
+    block_time = Value(None, inputs=(source,))
     has_value = False  # was there a value in the current block?
     next_value = None  # if so, what is it?
 

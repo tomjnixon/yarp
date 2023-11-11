@@ -3,6 +3,7 @@ import sentinel
 import warnings
 import weakref
 import threading
+from contextlib import contextmanager
 
 __names__ = [
     "NoValue",
