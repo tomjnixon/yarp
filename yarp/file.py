@@ -22,7 +22,7 @@ def file_backed_value(filename, initial_value=NoValue):
     the file while your program is running will be ignored.
 
     If the file does not exist, it will be created and the value set to
-    the value given by `initial_value`.
+    the value given by ``initial_value``.
 
     The value must be pickleable.
     """
