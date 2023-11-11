@@ -4,6 +4,7 @@ import warnings
 import weakref
 import threading
 from contextlib import contextmanager
+from typing import Optional
 
 __names__ = [
     "NoValue",
@@ -32,89 +33,173 @@ _transaction_state = threading.local()
 _transaction_state.mark_changed = None
 
 
+def _toposorted_dependencies(reactive):
+    """get a list of topologically-sorted dependencies of reactive"""
+    all_deps = []
+
+    _dfs_deps(reactive, all_deps, visited=set())
+
+    all_deps.reverse()
+    assert all_deps[0] is reactive
+
+    return all_deps
+
+
+def _dfs_deps(reactive, all_deps: list, visited: set):
+    """visit dependencies of reactive in depth-first order, then append to
+    all_deps, using visited to skip repeated dependencies
+    """
+    if id(reactive) in visited:
+        return
+
+    for weak_dependency in reactive._dependencies:
+        if (dependency := weak_dependency()) is not None:
+            _dfs_deps(dependency, all_deps, visited)
+
+    visited.add(id(reactive))
+    all_deps.append(reactive)
+
+
+class _TransactionInfo:
+    """A cache of dependency information and temporary values needed to run a
+    transaction starting at a given reactive value
+    """
+
+    def __init__(self, reactive):
+        self.update(reactive)
+
+    def update(self, reactive):
+        def deref_weak(weak):
+            """dereference a weak reference, asserting on failure"""
+            ref = weak()
+            assert ref is not None
+            return ref
+
+        all_deps = _toposorted_dependencies(reactive)
+        # weak references to all dependencies topologically sorted (including
+        # self)
+        self._all_dependencies = [weakref.ref(dep) for dep in all_deps]
+
+        # the version for each dependency
+        self._all_dependencies_versions = [
+            dep._dependencies_version for dep in all_deps
+        ]
+
+        # the index of each dependency, to be looked up by object id
+        self._id_to_idx = {id(dep): idx for idx, dep in enumerate(all_deps)}
+
+        # for each dependency, the index of dependents in _all_dependencies
+        # note: we hold a non-weak reference to all dependencies, so
+        # dereferencing dep_dep should not fail
+        self._dependent_idxes = [
+            [self._id_to_idx[id(deref_weak(dep_dep))] for dep_dep in dep._dependencies]
+            for dep in all_deps
+        ]
+
+        # temporary lists the same length as _all_dependencies to keep track of
+        # dependencies to run
+
+        # was this dependency changed in this transaction? used to avoid
+        # setting dependents to true in _tmp_to_run more than once
+        self._tmp_changed = [False] * len(self._all_dependencies)
+        # should this dependency run?
+        self._tmp_to_run = [False] * len(self._all_dependencies)
+
+    def needs_update(self):
+        """does this need to be updated?"""
+        for dep_ref, expected_version in zip(
+            self._all_dependencies, self._all_dependencies_versions
+        ):
+            dep = dep_ref()
+            if dep is None or dep._dependencies_version != expected_version:
+                return True
+
+        return False
+
+
 class Reactive:
     def __init__(self, inputs):
-        self._inputs = tuple(inputs)
+        self._inputs = list(inputs)
 
         self._dependencies = []
         # incremented whenever _dependencies is modified.
         # each Reactive checks that all dependents have not been modified when
         # it's ran by looking at this. an alternative would be to mark all
-        # inputs redursively as dirty on construction/destruction, but that
+        # inputs recursively as dirty on construction/destruction, but that
         # would make graph construction/destruction O(n^2)
         self._dependencies_version = 0
 
-        # dependency information used to update downstream values/events
-        # this is calculated when it's needed, and when any downstream
-        # dependencies are changed.
-        # all dependencies topologically sorted (including self)
-        self._all_dependencies = None
-        # the version for each dependency
-        self._all_dependencies_versions = None
-        # for each dependency, the index of dependents in _all_dependencies
-        self._dependent_idxes = None
+        # information only needed if this value is the changed externally,
+        # starting a transaction rooted here
+        self._transaction_info: Optional[_TransactionInfo] = None
 
-        # temporary list the same length as _all_dependencies to keep track of
-        # dependencies to run
-        self._tmp_changed = None
-        self._tmp_to_run = None
-        # mapping from id of dependencies to their index
-        self._id_to_idx = None
-
-        # add self to dependency lists of inputs. because no new inputs can be
-        # added to this FnValue, all dependency lists remain topologically sorted
+        # add self to dependency lists of inputs
         for input in self._inputs:
             input._add_dependency(self)
+
+    def add_input(self, input: "Reactive"):
+        """register a new input to this value
+
+        Normally inputs should be specified in the constructor, but this is
+        needed when the logical structure of dependencies (but not the actual
+        dependencies) is circular. This can happen when using asyncio (which
+        breaks loops by running callbacks asynchronously) -- see for example
+        the implementation of functions in `yarp.temporal`.
+        """
+        self._inputs.append(input)
+        input._add_dependency(self)
 
     def _on_inputs_done(self):
         # called when inputs have finished changing (all on-change callbacks have ran)
         raise NotImplementedError()
 
-    def _on_change(self):
-        # call when this has changed and dependencies need to run
+    @contextmanager
+    def _in_transaction(self):
+        """a context manager which runs the contained code in a transaction
+
+        when called inside a transaction this just marks the current value as
+        having been changed
+
+        when called outside a transaction, it runs the code inside
+        _in_new_transaction
+        """
         mark_changed = _transaction_state.mark_changed
         if mark_changed is None:
-            self._on_external_change()
+            with self._in_new_transaction():
+                yield
         else:
             if not mark_changed(self):
-                self._on_external_change()
+                # recursive transaction -- this is not a great idea, but
+                # mark_changed already raised a warning
+                with self._in_new_transaction():
+                    yield
+            else:
+                yield
 
-    def _on_external_change(self):
-        # called when something external has changed this (e.g. by writing to
-        # .value), and all dependents need to update too
-        # XXX: fix lax weak dereference
+    @contextmanager
+    def _in_new_transaction(self):
+        """a context manager which runs the contained code in a new transaction
 
+        this just records which dependencies have changed (according to whether
+        they have called _in_transaction and therefore mark_changed), and runs
+        the dependencies of those that have in topological order
+        """
+        # no need to do anything if we have no dependencies
         if not self._dependencies:
-            # nothing to do, don't bloat this object with dependency information
+            yield
             return
 
-        if self._all_dependencies is None or any(
-            dep()._dependencies_version != expected_version
-            for dep, expected_version in zip(
-                self._all_dependencies, self._all_dependencies_versions
-            )
-        ):
-            self._all_dependencies = self._toposorted_dependencies()
-            # XXX: fix lax weak dereference
-            self._all_dependencies_versions = [
-                dep()._dependencies_version for dep in self._all_dependencies
-            ]
-            # XXX: fix lax weak dereference
-            self._id_to_idx = {
-                id(dep()): idx for idx, dep in enumerate(self._all_dependencies)
-            }
-            # XXX: fix lax weak dereferences
-            self._dependent_idxes = [
-                [self._id_to_idx[id(dep_dep())] for dep_dep in dep()._dependencies]
-                for dep in self._all_dependencies
-            ]
-            self._tmp_changed = [False] * len(self._all_dependencies)
-            self._tmp_to_run = [False] * len(self._all_dependencies)
+        # make sure _transaction_info is up-to-date
+        if self._transaction_info is None:
+            self._transaction_info = _TransactionInfo(self)
+        elif self._transaction_info.needs_update():
+            self._transaction_info.update(self)
 
-        id_to_idx = self._id_to_idx
-        tmp_changed = self._tmp_changed
-        tmp_to_run = self._tmp_to_run
-        dependent_idxes = self._dependent_idxes
+        id_to_idx = self._transaction_info._id_to_idx
+        tmp_changed = self._transaction_info._tmp_changed
+        tmp_to_run = self._transaction_info._tmp_to_run
+        dependent_idxes = self._transaction_info._dependent_idxes
+        all_dependencies = self._transaction_info._all_dependencies
 
         for i in range(len(tmp_changed)):
             tmp_changed[i] = False
@@ -142,9 +227,11 @@ class Reactive:
         _transaction_state.mark_changed = mark_changed
 
         try:
-            for i in range(1, len(self._all_dependencies)):
+            yield
+
+            for i in range(1, len(all_dependencies)):
                 if tmp_to_run[i]:
-                    dep = self._all_dependencies[i]()
+                    dep = all_dependencies[i]()
                     if dep is not None:
                         dep._on_inputs_done()
         finally:
@@ -162,27 +249,6 @@ class Reactive:
                 break
         else:
             assert False, "inconsistent dependency references"
-
-    def _toposorted_dependencies(self):
-        all_deps = []
-
-        self._dfs_deps(all_deps, visited=set())
-
-        all_deps.reverse()
-        assert all_deps[0]() is self
-
-        return all_deps
-
-    def _dfs_deps(self, all_deps, visited):
-        if id(self) in visited:
-            return
-
-        for weak_dependency in self._dependencies:
-            if (dependency := weak_dependency()) is not None:
-                dependency._dfs_deps(all_deps, visited)
-
-        visited.add(id(self))
-        all_deps.append(weakref.ref(self))
 
 
 class Value(Reactive):
@@ -234,10 +300,10 @@ class Value(Reactive):
 
     @value.setter
     def value(self, new_value):
-        self._value = new_value
-        for cb in self._on_value_changed:
-            cb(new_value)
-        self._on_change()
+        with self._in_transaction():
+            self._value = new_value
+            for cb in self._on_value_changed:
+                cb(new_value)
 
     def on_value_changed(self, cb):
         """
@@ -287,9 +353,9 @@ class Event(Reactive):
         return cb
 
     def emit(self, value):
-        for cb in self._callbacks:
-            cb(value)
-        self._on_change()
+        with self._in_transaction():
+            for cb in self._callbacks:
+                cb(value)
 
     def _on_inputs_done(self):
         if self._on_inputs_done_cb is not None:
