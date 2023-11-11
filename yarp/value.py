@@ -184,9 +184,25 @@ class Reactive:
         they have called _in_transaction and therefore mark_changed), and runs
         the dependencies of those that have in topological order
         """
-        # no need to do anything if we have no dependencies
+        # if we have no dependencies, mark_changed should always warn, and
+        # there's no need to make a whole _TransactionInfo object. this is
+        # mainly useful because it's reasonable to set Value.value during (or
+        # just after) construction, before dependencies have been added
         if not self._dependencies:
-            yield
+
+            def mark_changed(obj):
+                warnings.warn(
+                    f"untracked dependency from {self!r} (id {id(self)}) "
+                    f"to {obj!r} (id {id(obj)})"
+                )
+
+            old_mark_changed = _transaction_state.mark_changed
+            _transaction_state.mark_changed = mark_changed
+
+            try:
+                yield
+            finally:
+                _transaction_state.mark_changed = old_mark_changed
             return
 
         # make sure _transaction_info is up-to-date
