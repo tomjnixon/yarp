@@ -102,22 +102,19 @@ def filter(source, rule=NoValue):
 @fn
 def replace_novalue(source_value, replacement_if_novalue=None):
     """
-    If the ``source_value`` is :py:data:`NoValue`, return
-    ``replacement_if_novalue`` instead.
+    If the ``source_value`` is `NoValue`, return ``replacement_if_novalue``
+    instead.
 
     Parameters
     ----------
-    source_value : :py:class:`Value`
-        An instantaneous or continuous :py:class:`Value`.
-    replacement_if_novalue : Python object or :py:class:`Value`
+    source_value : `Value` or `Event`
+    replacement_if_novalue : Python object or `Value`
         Replacement value to use if ``source_value`` has the value
-        :py:data:`NoValue`.
+        `NoValue`.
 
     Returns
     -------
-    A continuous :py:class:`Value` which will be a copy of ``source_value`` if
-    ``source_value`` is not :py:data:`NoValue`, otherwise the value of
-    ``replacement_if_novalue`` is used instead.
+    A `Value` or `Event` matching ``source_value``.
     """
     if source_value is NoValue:
         return replacement_if_novalue
