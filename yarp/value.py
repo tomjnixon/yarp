@@ -118,6 +118,10 @@ class _TransactionInfo:
 
 
 class Reactive:
+    """base class for reactive types (`Value` and `Event`)
+
+    this only exists to handle dependency tracking and transactions
+    """
     def __init__(self, inputs):
         self._inputs = list(inputs)
 
