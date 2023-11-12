@@ -5,10 +5,10 @@
 Using Values and Events
 =======================
 
-The two fundamental types in ``yarp`` are `Value` and `Event`. Basic uses of
-these are shown in the introduction, and the API docs describe their API, but
-the purpose of this page is to show some of the different ways that these
-should be used.
+The two fundamental types in ``yarp`` are `Value` and `Event`. While basic uses
+of these are shown in :ref:`the introduction<yarp-introduction>`, and `the API
+docs<yarp>` describe how they work, the purpose of this page is to show some of
+the different ways that these should be used in practice.
 
 Using `fn` and ``yarp`` utilities
 ---------------------------------

@@ -1,5 +1,7 @@
 .. currentmodule:: yarp
 
+.. _yarp-introduction:
+
 Introduction
 ============
 
