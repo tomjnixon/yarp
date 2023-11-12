@@ -25,7 +25,8 @@ A special value indicating that a ``yarp`` value has not been assigned a value.
 
 NoChange = sentinel.create("NoChange")
 """
-a value returned by callbacks indicating that no change should be made to a value
+A value returned by callbacks indicating that no change should be made to a
+value, or no event should be emitted.
 """
 
 
