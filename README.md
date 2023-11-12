@@ -1,11 +1,14 @@
 `yarp`: Yet Another Reactive(-ish) Programming library for Python
 =================================================================
 
-[![Build Status](https://travis-ci.org/mossblaser/yarp.svg?branch=master)](https://travis-ci.org/mossblaser/yarp)
-
 This library facilitates a programming style which is a little bit like
 [(functional-ish) reactive
 programming](https://en.wikipedia.org/wiki/Functional_reactive_programming).
+
+This particular repository is a fork of
+[mossblaser/yarp](https://github.com/mossblaser/yarp), which exchanged
+continuous/instantaneous values for two separate types, and adds a transaction
+mechanism to avoid glitches when multiple values are combined.
 
 Motivating Example
 ------------------
@@ -17,7 +20,7 @@ feature of spreadsheets is that if you change the value in a cell, any other
 cell whose value depends on it is automatically recomputed.
 
 Using `yarp` you can define values, and functions acting on those values, which
-are automatically reevaluated when changed. For example:
+are automatically re-evaluated when changed. For example:
 
     >>> from yarp import Value, fn
     
@@ -25,12 +28,11 @@ are automatically reevaluated when changed. For example:
     >>> a = Value(1)
     >>> b = Value(1)
     
-    >>> # Lets define a function 'add' which adds two numbers together. The
+    >>> # Define a function 'add' which adds two numbers together. The
     >>> # @fn decorator automatically wraps 'add' so that it takes Value
-    >>> # objects as arguments and returns a Value object. Your definition,
+    >>> # objects as arguments and returns a Value object. The definition,
     >>> # however, is written just like you'd write any normal function:
-    >>> # accepting and returning regular Python types in boring every-day
-    >>> # ways.
+    >>> # accepting and returning regular Python types.
     >>> @fn
     ... def add(a, b):
     ...     return a + b
@@ -56,15 +58,15 @@ are automatically reevaluated when changed. For example:
     >>> c = Value(complex(1, 2))
     >>> r = c.real
     >>> r.value
-    1
+    1.0
     >>> i = c.imag
     >>> i.value
-    2
+    2.0
     >>> c.value = complex(10, 100)
     >>> r.value
-    10
+    10.0
     >>> i.value
-    100
+    100.0
     
     >>> # You can also call (side-effect free) methods of Values to get a
     >>> # Value-wrapped version of the result which updates when the Value
@@ -77,34 +79,35 @@ are automatically reevaluated when changed. For example:
     (123-321j)
 
 As well as representing continuous values which change at defined points in
-time `yarp` can also represent values which are defined only instantaneously,
-for example an ephemeral sensor reading. For example:
+time `yarp` can also represent events which have a defined value only
+instantaneously, for example an ephemeral sensor reading. For example:
 
-    >>> from yarp import Value, instantaneous_fn
-    
-    >>> # Lets create an instantaneous value which occurs whenever a car drives
-    >>> # past a speed check. At the moment of measurement, the value has the
-    >>> # instantaneous value of the car's speed in MPH. For now, though, it
-    >>> # has no value.
-    >>> car_speed_mph = Value()
-    
-    >>> # We live in a civilised world so lets convert that into KM/H. This
-    >>> # 'instantaneous_fn' decorator works just like the 'fn' one but returns
-    >>> # instantaneous values.
-    >>> @instantaneous_fn
+    >>> from yarp import Event
+
+    >>> # Create an Event object which represents the speed of cars driving past a
+    >>> # speed check. This has no value normally, but 'emits' a value (the car's
+    >>> # speed) every time one passes.
+
+    >>> car_speed_mph = Event()
+
+    >>> # We live in a civilised world so lets convert that into KM/H. When an
+    >>> # Event object is passed to a function decorated with `fn` (described
+    >>> # above), the result is a new Event object which emits transformed
+    >>> # events.
+    >>> @fn
     ... def mph_to_kph(mph):
     ...     return mph * 1.6
-    
+
     >>> car_speed_kph = mph_to_kph(car_speed_mph)
-    
+
     >>> # Lets setup a callback to print a car's speed whenever it is measured
-    >>> def on_car_measured(speed_kph):
+    >>> @car_speed_kph.on_event
+    ... def on_car_measured(speed_kph):
     ...     print("A car passed at {} KM/H".format(speed_kph))
-    >>> car_speed_kph.on_value_changed(on_car_measured)
-    
+
     >>> # Now lets instantaneously set the value as if a car has just gone past
     >>> # and watch as our callback is called with the speed in KM/H
-    >>> car_speed_mph.set_instantaneous_value(30)
+    >>> car_speed_mph.emit(30)
     A car passed at 48.0 KM/H
 
 Comparison with other libraries
