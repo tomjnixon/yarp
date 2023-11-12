@@ -292,7 +292,6 @@ class Value(Reactive):
         have finished updating in a transaction.
 
         This may return `NoChange`, in which case `value` will not be updated.
-
     """
 
     def __init__(self, initial_value=NoValue, inputs=(), get_value=None):
