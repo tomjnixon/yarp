@@ -10,5 +10,5 @@ This library facilitates a programming style which is a little bit like
    :caption: Contents:
    
    introduction
-   impureValues
+   using_values_and_events
    api
