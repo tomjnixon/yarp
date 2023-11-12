@@ -19,3 +19,13 @@ def test_file_backed_value(tmpdir):
     # Should be able to read it
     v3 = file_backed_value(filename, "initial")
     assert v3.value == NoValue
+
+
+def test_file_backed_value_error(tmpdir):
+    filename = str(tmpdir.join("test.pickle"))
+
+    with open(filename, "w") as f:
+        f.write("not a pickle")
+
+    v = file_backed_value(filename, "initial")
+    assert v.value == "initial"
