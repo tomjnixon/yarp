@@ -148,7 +148,7 @@ class Reactive:
         needed when the logical structure of dependencies (but not the actual
         dependencies) is circular. This can happen when using asyncio (which
         breaks loops by running callbacks asynchronously) -- see for example
-        the implementation of functions in `yarp.temporal`.
+        the implementation of functions like `rate_limit`.
         """
         self._inputs.append(input)
         input._add_dependency(self)
