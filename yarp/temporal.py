@@ -8,6 +8,7 @@ from yarp import NoValue, Event, Value, ensure_value, fn
 from ._utils import make_same_type, emit_fn, on_value
 
 __names__ = [
+    "emit_at",
     "delay",
     "time_window",
     "rate_limit",
