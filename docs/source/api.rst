@@ -3,15 +3,25 @@
 ``yarp`` API
 ============
 
-Value type
-----------
+Value and Event types
+---------------------
 
-At the core of the ``yarp`` API is the :py:class:`Value` type. This type is
-defined below.
+At the core of the ``yarp`` API are the `Value` and `Event` types, defined below.
+
+.. autoclass:: Value
+
+.. autoclass:: Event
+
+.. autoclass:: Reactive
 
 .. autodata:: NoValue
 
-.. autoclass:: Value
+    A special value indicating that a ``yarp`` value has not been assigned a value.
+
+.. autodata:: NoChange
+
+    A value returned by callbacks indicating that no change should be made to a
+    value, or no event should be emitted.
 
 Aggregate Values
 ----------------
@@ -29,22 +39,22 @@ update whenever the underlying :py:class:`Value`\ s do.
 Value casting
 -------------
 
-The following low-level funcitons are provided for creating and casting
-:py:class:`Value` objects.
+The following low-level functions are provided for creating and casting
+`Value` and `Event` objects.
 
 .. autofunction:: ensure_value
 
-.. autofunction:: make_instantaneous
+.. autofunction:: value_to_event
 
-.. autofunction:: make_persistent
+.. autofunction:: event_to_value
 
 Value Operators
 ---------------
 
-The :py:class:`Value` class also supports many (but not all) of the native
-Python operations, producing corresponding (continuous) :py:class:`Value`
-objects as results. These operations support the mixing of :py:class:`Value`
-objects and other suitable Python objects. The following operators are
+The `Value` and `Event` classes also supports many (but not all) of the native
+Python operations, producing corresponding `Value` or `Event` objects. These
+operations support the mixing of `Value`, `Event` and other suitable Python
+objects, following the same rules as `fn`. The following operators are
 supported:
 
 * Arithmetic
@@ -84,9 +94,9 @@ supported:
     * ``round(a)``
 * Python object/function usage
     * ``a(...)`` will call the value as a function and return a
-      :py:class:`Value` containing the result. This value will be updated by
-      re-calling the function whenever the Value changes. Like :py:func:`fn`,
-      arguments may be :py:class:`Value` objects and these will be unwrapped
+      `Value` or `Event` containing the result. This will be updated by
+      re-calling the function whenever the input changes. Like :py:func:`fn`,
+      arguments may be `Value` or `Event` objects and these will be unwrapped
       before the function is called and will also cause the function to be
       re-evaluated whenever they change. Do not use this to call functions with
       side effects.
@@ -108,15 +118,12 @@ This list also doesn't include mutating operators, for example ``a[key] = b``.
 This is because the Python objects within a :py:class:`Value` are treated as
 being immutable.
 
-Finally, to reiterate, the result of these operators will always be continuous
-:py:class:`Values`. For instantaneous versions of these operators, see the
-Python builtins section below.
-
 Python builtins
 ---------------
 
-The ``yarp`` API provides :py:class:`Value`-compatible versions of a number of
-Python builtins and functions from the standard library:
+The ``yarp`` API provides versions of a number of
+Python builtins and functions from the standard library which work with `Value`
+and `Event`:
 
 * Builtins
     * ``bool(a)``
@@ -138,26 +145,21 @@ Python builtins and functions from the standard library:
 * Most non-mutating, non-underscore prefixed functions from the
   :py:mod:`operator` module.
 
-These wrappers produce continuous :py:class:`Value`\ s. Corresponding
-versions prefixed with ``instantaneous_`` are provided which produce
-instantaneous :py:class:`Value`\ s.
+As above, these follow the same rules as `fn`: the result will be an `Event` if
+any of the inputs are `Event`\ s, otherwise `Value`.
 
 Function wrappers
 -----------------
 
-The primary mode of interaction with ``yarp`` :py:class:`Value`\ s is intended
-to be via simple Python functions wrapped with :py:func:`fn` or
-:py:func:`instantaneous_fn`. These wrappers are defined below.
+The primary mode of interaction with ``yarp`` `Value`\ s and `Event`\ s is
+intended to be via simple Python functions wrapped with `fn`, defined below.
 
 .. autofunction:: fn
-
-.. autofunction:: instantaneous_fn
 
 General Value manipulation
 --------------------------
 
-The following utility functions are defined which accept and return
-:py:class:`Value`\ s.
+The following utility functions are defined.
 
 .. autofunction:: replace_novalue
 
@@ -170,16 +172,17 @@ The following utility functions are defined which accept and return
 Temporal Value manipulation
 ---------------------------
 
-The following utility functions are defined which accept and return
-:py:class:`Value`\ s but may delay or filter changes. These all use
-:py:mod:`asyncio` internally and require that a
-:py:class:`asyncio.BaseEventLoop` be running.
+The following utility functions are used to modify or observe how `Value`\ s
+and `Event`\ s change over time. These all use :py:mod:`asyncio` internally and
+require that a :py:class:`asyncio.BaseEventLoop` be running.
 
 .. autofunction:: delay
 
 .. autofunction:: time_window
 
 .. autofunction:: rate_limit
+
+.. autofunction:: emit_at
 
 File-backed Values
 ------------------
