@@ -247,6 +247,29 @@ def test_dep_ordering():
     assert results == [4, 6]
 
 
+@pytest.mark.parametrize("has_dep", [True, False])
+def test_missing_dep(has_dep):
+    initial = Value(0)
+    if has_dep:
+        hanging_dep = initial + 1
+
+    missing_input = Value(initial.value)
+
+    @initial.on_value_changed
+    def initial_changed(new_value):
+        missing_input.value = new_value
+
+    missing_input_dep = missing_input + 1
+
+    with pytest.warns(UserWarning, match="untracked dependency"):
+        initial.value = 2
+
+    assert missing_input.value == 2
+    assert missing_input_dep.value == 3
+    if has_dep:
+        assert hanging_dep.value == 3
+
+
 def test_loop_dep():
     v1 = Value()
     v2 = Value(v1.value, inputs=(v1,))
