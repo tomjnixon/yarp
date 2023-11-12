@@ -245,3 +245,13 @@ def test_dep_ordering():
 
     e.emit(3)
     assert results == [4, 6]
+
+
+def test_loop_dep():
+    v1 = Value()
+    v2 = Value(v1.value, inputs=(v1,))
+
+    v1.add_input(v2)
+
+    with pytest.raises(RuntimeError, match="dependency loop"):
+        v1.value = 1

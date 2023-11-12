@@ -38,7 +38,7 @@ def _toposorted_dependencies(reactive):
     """get a list of topologically-sorted dependencies of reactive"""
     all_deps = []
 
-    _dfs_deps(reactive, all_deps, visited=set())
+    _dfs_deps(reactive, all_deps, visited=set(), path=[])
 
     all_deps.reverse()
     assert all_deps[0] is reactive
@@ -46,16 +46,25 @@ def _toposorted_dependencies(reactive):
     return all_deps
 
 
-def _dfs_deps(reactive, all_deps: list, visited: set):
+def _dfs_deps(reactive, all_deps: list, visited: set, path: list):
     """visit dependencies of reactive in depth-first order, then append to
     all_deps, using visited to skip repeated dependencies
     """
+    if id(reactive) in path:
+        raise RuntimeError(
+            f"found a dependency loop from {reactive!r} (id {id(reactive)})"
+        )
+
     if id(reactive) in visited:
         return
 
+    path.append(id(reactive))
+
     for weak_dependency in reactive._dependencies:
         if (dependency := weak_dependency()) is not None:
-            _dfs_deps(dependency, all_deps, visited)
+            _dfs_deps(dependency, all_deps, visited, path)
+
+    path.pop()
 
     visited.add(id(reactive))
     all_deps.append(reactive)
