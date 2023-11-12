@@ -10,11 +10,10 @@ __names__ = [
 ]
 
 
-def now(interval=1.0, tz=None, loop=None):
+def now(interval=1.0, tz=None, loop=None) -> Value:
     """
-    Returns a continuous :py:class:`Value` containing a
-    :py:class:`datetime.datetime` object holding the current time, refreshed
-    every ``interval`` seconds.
+    Returns a :py:class:`Value` containing a :py:class:`datetime.datetime`
+    object holding the current time, refreshed every ``interval`` seconds.
 
     The ``interval`` argument may be a constant or a :py:class:`Value` giving
     the number of seconds to wait between updates. If the Value changes, the
