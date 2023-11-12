@@ -136,7 +136,7 @@ def fn(f):
                         event_buffer.append((values, key, value))
 
                 else:
-                    assert False, f"unknown reactive: {reactive!r}"
+                    assert False, f"unknown reactive: {reactive!r}"  # pragma: no cover
             else:
                 values[key] = reactive
 

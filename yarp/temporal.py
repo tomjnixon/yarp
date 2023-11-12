@@ -200,7 +200,7 @@ def time_window(source, duration_seconds):
             def _(event):
                 values_and_times.value = values_and_times.value + [(event, loop.time())]
 
-        case _:
+        case _:  # pragma: no cover
             assert False
 
     return to_values(values_and_times)

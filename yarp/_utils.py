@@ -29,7 +29,7 @@ def on_value(source, cb=NO_CB, current=True):
             source.on_value_changed(cb)
         case Event():
             source.on_event(cb)
-        case _:
+        case _:  # pragma: no cover
             assert False
 
 
@@ -44,7 +44,7 @@ def emit_fn(reactive):
             return emit
         case Event():
             return reactive.emit
-        case _:
+        case _:  # pragma: no cover
             assert False
 
 
@@ -67,5 +67,5 @@ def make_same_type(reactive, inputs=(), initial_value=COPY):
             )
         case Event():
             return Event(inputs=inputs)
-        case _:
+        case _:  # pragma: no cover
             assert False

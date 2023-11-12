@@ -157,7 +157,7 @@ class Reactive:
 
     def _on_inputs_done(self):
         # called when inputs have finished changing (all on-change callbacks have ran)
-        raise NotImplementedError()
+        raise NotImplementedError()  # pragma: no cover
 
     @contextmanager
     def _in_transaction(self):
@@ -270,7 +270,7 @@ class Reactive:
                 self._dependencies_version += 1
                 break
         else:
-            assert False, "inconsistent dependency references"
+            assert False, "inconsistent dependency references"  # pragma: no cover
 
 
 class Value(Reactive):
