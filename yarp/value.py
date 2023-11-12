@@ -362,6 +362,24 @@ class Value(Reactive):
 
 
 class Event(Reactive):
+    """represents a value that is only known at some points in time
+
+    this is really just a list of callbacks (added with `on_event`), which can
+    be called by calling `emit`.
+
+    inputs : Iterable[Reactive]
+        other reactive objects (`Value` or `Event`) whose changes (value
+        changes or events) cause events to be emitted from this object, either
+        through ``on_inputs_done``, or calling `emit` inside their
+        `on_value_changed` or `Event.on_event` callbacks
+    on_inputs_done : Callable[[Callable[[Any]], None], Any]
+        a callback which when called with a single callable argument, calls
+        that argument with a single parameter to emit values from this object
+
+        If provided, this is called once after all objects specified in
+        ``inputs`` have finished updating in a transaction.
+    """
+
     def __init__(self, inputs=(), on_inputs_done=None):
         super(Event, self).__init__(inputs)
 
@@ -369,10 +387,16 @@ class Event(Reactive):
         self._on_inputs_done_cb = on_inputs_done
 
     def on_event(self, cb):
+        """register a callback, which will be called whenever `emit` is called,
+        with the same value
+
+        the callback is returned, so this can be used as a decorator
+        """
         self._callbacks.append(cb)
         return cb
 
     def emit(self, value):
+        """emit a value, calling all callbacks registered with `on_event`"""
         with self._in_transaction():
             for cb in self._callbacks:
                 cb(value)
