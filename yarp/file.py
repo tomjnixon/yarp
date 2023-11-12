@@ -13,7 +13,7 @@ __names__ = [
 ]
 
 
-def file_backed_value(filename, initial_value=NoValue):
+def file_backed_value(filename, initial_value=NoValue) -> Value:
     """
     A persistent, file-backed value.
 
