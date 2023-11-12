@@ -83,7 +83,9 @@ autodoc_member_order = "bysource"
 # Fixes autosummary errors
 numpydoc_show_class_members = False
 
-autodoc_default_flags = ["members"]
+autodoc_default_options = dict(
+    members=True,
+)
 
 # Don't test every code snippet, just .. doctest:: ones
 doctest_test_doctest_blocks = ""
