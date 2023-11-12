@@ -427,11 +427,11 @@ Transactions are started automatically, and consist of the following steps:
 
 - Change recording stops, and the transaction ends.
 
-The dependency information (``inputs``) are required to correctly order the
+The dependency information (``inputs``) is required to correctly order the
 dependencies. Some missing dependencies can be detected, but not all. When a
 dependency is missing, all callbacks will still run (possibly in a nested
-transaction, with a warning), but possibly not in the order that solves the
-issue shown above.
+transaction, with a warning), but possibly more than once, or not in the order
+that solves the issue shown above.
 
 It is sometimes not possible to specify all inputs in the `Event` or `Value`
 constructor. In that case, use `Reactive.add_input`.
