@@ -312,7 +312,7 @@ class Value(Reactive):
         the current value of this object
 
         If not yet set (either in the constructor or by assigning to this
-        property), this will be ``NoValue``.
+        property), this will be `NoValue`.
 
         Setting this property will call the :py:class:`on_value_changed`
         callbacks.
