@@ -1,5 +1,7 @@
 .. currentmodule:: yarp
 
+.. _using-values-and-events:
+
 Using Values and Events
 =======================
 

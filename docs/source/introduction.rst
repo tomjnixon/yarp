@@ -20,12 +20,11 @@ those values, which are automatically reevaluated when changed. For example:
     >>> a = Value(1)
     >>> b = Value(1)
     
-    >>> # Lets define a function 'add' which adds two numbers together. The
+    >>> # Define a function 'add' which adds two numbers together. The
     >>> # @fn decorator automatically wraps 'add' so that it takes Value
-    >>> # objects as arguments and returns a Value object. Your definition,
+    >>> # objects as arguments and returns a Value object. The definition,
     >>> # however, is written just like you'd write any normal function:
-    >>> # accepting and returning regular Python types in boring every-day
-    >>> # ways.
+    >>> # accepting and returning regular Python types.
     >>> @fn
     ... def add(a, b):
     ...     return a + b
@@ -51,15 +50,15 @@ those values, which are automatically reevaluated when changed. For example:
     >>> c = Value(complex(1, 2))
     >>> r = c.real
     >>> r.value
-    1
+    1.0
     >>> i = c.imag
     >>> i.value
-    2
+    2.0
     >>> c.value = complex(10, 100)
     >>> r.value
-    10
+    10.0
     >>> i.value
-    100
+    100.0
     
     >>> # You can also call (side-effect free) methods of Values to get a
     >>> # Value-wrapped version of the result which updates when the Value
@@ -72,39 +71,43 @@ those values, which are automatically reevaluated when changed. For example:
     (123-321j)
 
 As well as representing continuous values which change at defined points in
-time ``yarp`` can also represent values which are defined only instantaneously,
-for example an ephemeral sensor reading. For example:
+time ``yarp`` can also represent :py:class:`Event`\ s which have a defined value
+only instantaneously, for example an ephemeral sensor reading. For example:
 
 .. doctest::
 
-    >>> from yarp import Value, instantaneous_fn
-    
-    >>> # Lets create an instantaneous value which occurs whenever a car drives
-    >>> # past a speed check. At the moment of measurement, the value has the
-    >>> # instantaneous value of the car's speed in MPH. For now, though, it
-    >>> # has no value.
-    >>> car_speed_mph = Value()
-    
-    >>> # We live in a civilised world so lets convert that into KM/H. This
-    >>> # 'instantaneous_fn' decorator works just like the 'fn' one but returns
-    >>> # instantaneous values.
-    >>> @instantaneous_fn
+    >>> from yarp import Event
+
+    >>> # Create an Event object which represents the speed of cars driving past a
+    >>> # speed check. This has no value normally, but 'emits' a value (the car's
+    >>> # speed) every time one passes.
+
+    >>> car_speed_mph = Event()
+
+    >>> # We live in a civilised world so lets convert that into KM/H. When an
+    >>> # Event object is passed to a function decorated with `fn` (described
+    >>> # above), the result is a new Event object which emits transformed
+    >>> # events.
+    >>> @fn
     ... def mph_to_kph(mph):
     ...     return mph * 1.6
-    
+
     >>> car_speed_kph = mph_to_kph(car_speed_mph)
-    
+
     >>> # Lets setup a callback to print a car's speed whenever it is measured
-    >>> def on_car_measured(speed_kph):
+    >>> @car_speed_kph.on_event
+    ... def on_car_measured(speed_kph):
     ...     print("A car passed at {} KM/H".format(speed_kph))
-    >>> car_speed_kph.on_value_changed(on_car_measured)
-    <function ...>
-    
+
     >>> # Now lets instantaneously set the value as if a car has just gone past
     >>> # and watch as our callback is called with the speed in KM/H
-    >>> car_speed_mph.set_instantaneous_value(30)
+    >>> car_speed_mph.emit(30)
     A car passed at 48.0 KM/H
 
+
 As in these examples, the intention is that most ``yarp``-using code will be
-based entirely on passing :py:class:`Value`\ s around between functions wrapped
-with :py:func:`fn` and :py:func:`instantaneous_fn`.
+based entirely on passing :py:class:`Value`\ s and :py:class:`Event`\ s around
+between functions wrapped with :py:func:`fn`.
+
+:ref:`using-values-and-events` shows how to use `fn` and the ``yarp``
+utilities, and what to do when they are not enough.
