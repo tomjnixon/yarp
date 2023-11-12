@@ -122,6 +122,7 @@ class Reactive:
 
     this only exists to handle dependency tracking and transactions
     """
+
     def __init__(self, inputs):
         self._inputs = list(inputs)
 
