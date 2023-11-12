@@ -15,20 +15,25 @@ __names__ = [
 ]
 
 
-def emit_at(time) -> Event:
+def emit_at(time: Value | float | int | None) -> Event:
     """emit an event at the times given in time
 
-    time can be None (no events), a time in seconds as given by loop.time()
+    Time can be None (no events), a time in seconds as given by loop.time()
     (emit None at the given time), or a tuple containing the time and the value
-    to emit
+    to emit.
 
-    whenever time changes the timer is reloaded, so if the timer for the
-    previous value has not fired, it never will. this also means that if the
+    Whenever time changes the timer is reloaded, so if the timer for the
+    previous value has not fired, it never will. This also means that if the
     time changes to be before the current time, there will be one event per
-    change
+    change.
 
-    this is mostly useful in cases where you can calculate the next time that
-    something should happen from some Value
+    This is mostly useful in cases where you can calculate the next time that
+    something should happen from some Value.
+
+    The resulting Event does not depend on ``time``, because it is always
+    emitted in an asyncio callback (never synchronously on ``time`` changes,
+    even if ``time`` is in the past).  This makes it safe to modify ``time``
+    (or one of its inputs) in a callback attached to the result.
     """
     time = ensure_value(time)
 
