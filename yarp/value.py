@@ -546,6 +546,71 @@ def ensure_value(value):
         return Value(value)
 
 
+def reactive_list(list_of_values):
+    """get a Value or Event which contains a list of the values held by the
+    Value or Event objects in list_of_values
+
+    this follows the same rules as :func:`fn` -- the result will be a Value,
+    unless any of the inputs are Events, in which case the result will be an
+    Event
+    """
+    # TODO: replace this with something custom -- same for tuple and dict
+    from yarp import fn
+
+    return fn(lambda *values: list(values))(*list_of_values)
+
+
+def reactive_tuple(tuple_of_values):
+    """get a Value or Event which contains a tuple of the values held by the
+    Value or Event objects in tuple_of_values
+
+    this follows the same rules as :func:`fn` -- the result will be a Value,
+    unless any of the inputs are Events, in which case the result will be an
+    Event
+    """
+    from yarp import fn
+
+    return fn(lambda *values: values)(*tuple_of_values)
+
+
+def reactive_dict(dict_of_values):
+    """get a Value or Event which contains a dict corresponding to
+    dict_of_values: the keys are the same as dict_of_values, and the values are
+    the values held by the Value or Event objects  in the values of
+    dict_of_values
+
+    this follows the same rules as :func:`fn` -- the result will be a Value,
+    unless any of the inputs are Events, in which case the result will be an
+    Event
+    """
+    from yarp import fn
+
+    return fn(lambda **values: values)(**dict_of_values)
+
+
+def ensure_reactive(value):
+    """turn anything into a Value or an Event
+
+    the return value will be a single Event or a Value, representing the same
+    structure as value, and which updates whenever any Events or Values in value
+    change, recursing through lists, tuples and dicts
+
+    this follows the same rules as :func:`fn` -- the result will be a Value,
+    unless any of the inputs are Events, in which case the result will be an
+    Event
+    """
+    if isinstance(value, Reactive):
+        return value
+    elif isinstance(value, list):
+        return reactive_list([ensure_reactive(v) for v in value])
+    elif isinstance(value, tuple):
+        return reactive_tuple(tuple(ensure_reactive(v) for v in value))
+    elif isinstance(value, dict):
+        return reactive_dict({k: ensure_reactive(v) for k, v in value.items()})
+    else:
+        return Value(value)
+
+
 def value_to_event(source_value):
     """make an Event which emits the new value of source_value whenever it changes"""
     event = Event(inputs=(source_value,))

@@ -10,6 +10,7 @@ from yarp import (
     value_tuple,
     value_dict,
     ensure_value,
+    ensure_reactive,
     value_to_event,
     event_to_value,
 )
@@ -182,6 +183,86 @@ def test_ensure_value_nested():
     c = Value(789)
 
     v = ensure_value({"a": a, "bc": [b, c]})
+    assert isinstance(v, Value)
+    assert v.value == {"a": 123, "bc": [456, 789]}
+
+    b.value = 654
+    assert v.value == {"a": 123, "bc": [654, 789]}
+
+
+def test_ensure_reactive_non_value():
+    v = ensure_reactive(123)
+    assert isinstance(v, Value)
+    assert v.value == 123
+
+
+def test_ensure_reactive_already_value():
+    v = Value(123)
+    vv = ensure_reactive(v)
+    assert vv is v
+
+
+def test_ensure_reactive_already_event():
+    v = Event()
+    vv = ensure_reactive(v)
+    assert vv is v
+
+
+def test_ensure_reactive_list():
+    a = 123
+    b = Value(456)
+
+    v = ensure_reactive([a, b])
+    assert isinstance(v, Value)
+    assert v.value == [123, 456]
+
+    b.value = 789
+    assert v.value == [123, 789]
+
+
+def test_ensure_reactive_tuple():
+    a = 123
+    b = Value(456)
+
+    v = ensure_reactive((a, b))
+    assert isinstance(v, Value)
+    assert v.value == (123, 456)
+
+    b.value = 789
+    assert v.value == (123, 789)
+
+
+def test_ensure_reactive_tuple_event():
+    a = 123
+    b = Event()
+
+    v = ensure_reactive((a, b))
+    assert isinstance(v, Event)
+    events = []
+    v.on_event(events.append)
+
+    b.emit(789)
+    assert events == [(123, 789)]
+
+
+def test_ensure_reactive_dict():
+    a = 123
+    b = Value(456)
+
+    v = ensure_reactive({"a": a, "b": b})
+    assert isinstance(v, Value)
+    assert v.value == {"a": 123, "b": 456}
+
+    b.value = 789
+    assert v.value == {"a": 123, "b": 789}
+
+
+def test_ensure_reactive_nested():
+    a = Value(123)
+    b = Value(456)
+    c = Value(789)
+
+    v = ensure_reactive({"a": a, "bc": [b, c]})
     assert isinstance(v, Value)
     assert v.value == {"a": 123, "bc": [456, 789]}
 
