@@ -3,7 +3,7 @@ General purpose utility functions for manipulating :py:class:`Value` values.
 """
 
 from yarp import NoChange, NoValue, Value, Event, fn, ensure_value
-from ._utils import on_value
+from .utils import on_value
 
 
 __names__ = [

@@ -1,5 +1,5 @@
-"""internal utilities, mostly to make it easier to handle Value or Event with
-the same code
+"""semi-internal utilities, mostly to make it easier to handle Value or Event
+with the same code
 """
 from .value import Value, Event
 

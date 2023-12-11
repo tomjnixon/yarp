@@ -5,7 +5,7 @@ Temporal filters for :py:class:`Value` values.
 import asyncio
 
 from yarp import NoValue, Event, Value, ensure_value, fn
-from ._utils import make_same_type, emit_fn, on_value
+from .utils import make_same_type, emit_fn, on_value
 
 __names__ = [
     "emit_at",
