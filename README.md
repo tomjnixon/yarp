@@ -6,7 +6,7 @@ This library facilitates a programming style which is a little bit like
 programming](https://en.wikipedia.org/wiki/Functional_reactive_programming).
 
 This particular repository is a fork of
-[mossblaser/yarp](https://github.com/mossblaser/yarp), which exchanged
+[mossblaser/yarp](https://github.com/mossblaser/yarp), which exchanges
 continuous/instantaneous values for two separate types, and adds a transaction
 mechanism to avoid glitches when multiple values are combined.
 
