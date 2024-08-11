@@ -11,7 +11,8 @@ def example_fsm(button_pressed: Event, force_off: Value, timeout_len=1.0):
     The state toggles when button_pressed emits, but can only be True for
     timeout_len before being reset back to False.
 
-    If force_off is true, the state will be set to False.
+    If force_off is true, the state will be set to False (and the timer
+    canceled)
     """
 
     def next_state(state, timeout, button_pressed, force_off):

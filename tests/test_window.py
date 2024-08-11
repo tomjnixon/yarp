@@ -61,13 +61,21 @@ class TestTimeWindow(object):
         """
         return asyncio.Semaphore(0)
 
+    @pytest.fixture(params=[[], ["initial"]], ids=["no initial", "with initial"])
+    def initial(self, request):
+        return request.param
+
     @pytest.fixture
-    def win(self, v, dv, sem, log, event_loop):
+    def win(self, v, dv, sem, log, event_loop, initial):
         """
         A time_window windowing the value 'v' for 'dv' seconds. Callbacks on change
         are logged in 'log'.
         """
-        win = time_window(v, dv)
+        match initial:
+            case []:
+                win = time_window(v, dv)
+            case [iv]:
+                win = time_window(v, dv, initial_value=iv)
 
         def on_change(value):
             log.append((time.time(), value))
