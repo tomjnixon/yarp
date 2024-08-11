@@ -91,7 +91,7 @@ class FSM:
                     assert False
 
         # true if we're currently handling a timeout; set from the event, and
-        # cleared agter calculating the new state
+        # cleared after calculating the new state
         handling_timeout = False
 
         @self.timeout_event.on_event
