@@ -3,6 +3,7 @@ Temporal filters for :py:class:`Value` values.
 """
 
 import asyncio
+import sentinel
 
 from yarp import NoValue, Event, Value, ensure_value, fn
 from .utils import make_same_type, emit_fn, on_value
@@ -13,6 +14,9 @@ __names__ = [
     "time_window",
     "rate_limit",
 ]
+
+
+NOTHING = sentinel.create("NOTHING")
 
 
 def emit_at(time: Value | float | int | None) -> Event:
@@ -133,7 +137,7 @@ def delay(source, delay_seconds):
     return output
 
 
-def time_window(source, duration_seconds):
+def time_window(source, duration_seconds, initial_value=NOTHING):
     """Produce a moving window over the historical values of a Value or the
     events of an Event within a given time period.
 
@@ -143,6 +147,9 @@ def time_window(source, duration_seconds):
     previously inserted values will be expired earlier, possibly immediately if
     they should already have expired. If the value is increased, previously
     inserted values will have an increased timeout.
+
+    If initial_value is provided, it will be treated as an event or change at
+    the time this is called.
     """
     duration_seconds = ensure_value(duration_seconds)
 
@@ -151,6 +158,8 @@ def time_window(source, duration_seconds):
     # value containing a list of values and the time at which they were last
     # seen. the time may be None for the current value of a Value
     values_and_times = Value([], inputs=(source, duration_seconds))
+    if initial_value is not NOTHING:
+        values_and_times.value = [(initial_value, loop.time())]
 
     @fn
     def to_values(values_and_times):
@@ -183,7 +192,7 @@ def time_window(source, duration_seconds):
 
     match source:
         case Value():
-            values_and_times.value = [(source.value, None)]
+            values_and_times.value = values_and_times.value + [(source.value, None)]
 
             @source.on_value_changed
             def _(new_value):
