@@ -1,6 +1,7 @@
 """semi-internal utilities, mostly to make it easier to handle Value or Event
 with the same code
 """
+
 from .value import Value, Event
 
 NO_CB = object()
@@ -60,9 +61,9 @@ def make_same_type(reactive, inputs=(), initial_value=COPY):
     match reactive:
         case Value():
             return Value(
-                initial_value=reactive.value
-                if initial_value is COPY
-                else initial_value,
+                initial_value=(
+                    reactive.value if initial_value is COPY else initial_value
+                ),
                 inputs=inputs,
             )
         case Event():
