@@ -1,5 +1,5 @@
 from .temporal import emit_at
-from .value import Value, Event
+from .value import Value, Event, NoChange
 import asyncio
 from functools import partial
 import sentinel
@@ -128,8 +128,9 @@ class FSM:
 
             if next_state != state_value:
                 state_value = next_state
-
-            return state_value
+                return state_value
+            else:
+                return NoChange
 
         self.state = Value(get_value=get_state, inputs=[*inputs, self.timeout_event])
 

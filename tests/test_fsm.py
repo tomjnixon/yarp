@@ -50,11 +50,19 @@ async def test_fsm():
 
     assert state.value is False
 
+    changes = 0
+
+    @state.on_value_changed
+    def on_state_changed(value):
+        nonlocal changes
+        changes += 1
+
     # button -> on -> off
     button_pressed.emit(None)
     assert state.value is True
     await asyncio.sleep(time_scale * 2)
     assert state.value is False
+    assert changes == 2
 
     # button -> on -> button -> off
     button_pressed.emit(None)
@@ -63,8 +71,10 @@ async def test_fsm():
     assert state.value is False
 
     # force off while off -> no change
+    changes = 0
     force_off.value = True
     assert state.value is False
+    assert changes == 0
 
     # button while forced off -> no change
     button_pressed.emit(None)
