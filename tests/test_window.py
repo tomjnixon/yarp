@@ -5,6 +5,7 @@ import asyncio
 import time
 
 from yarp import NoValue, Event, Value, window, time_window
+from yarp.utils import on_value
 
 
 def test_window():
@@ -382,3 +383,69 @@ class TestTimeWindowEvent(TestTimeWindow):
         await sem.acquire()
         assert len(log) == 3
         assert log[-1][1] == []
+
+
+@pytest.mark.asyncio
+async def test_window_store_Value():
+    from test_store import DictStoreConfig
+
+    store = DictStoreConfig()
+
+    v = Value(1)
+    dv = Value(0.2)
+
+    win = time_window(v, dv, store_cfg=store)
+
+    v.value = 2  # 1 evicted at 0.2
+
+    await asyncio.sleep(0.1)  # t = 0.1
+
+    v.value = 3  # 2 evicted at 0.3
+    assert win.value == [1, 2, 3]
+
+    store.data.run_atexits()  # 3 evicted at 0.3
+
+    await asyncio.sleep(0.15)  # t = 0.25
+
+    v.value = 4
+    win = time_window(v, dv, store_cfg=store)  # NoValue evicted at 0.45
+
+    assert win.value == [2, 3, NoValue, 4]
+
+    await asyncio.sleep(0.1)  # t = 0.35
+
+    assert win.value == [NoValue, 4]
+
+    await asyncio.sleep(0.15)  # t = 0.5
+
+    assert win.value == [4]
+
+
+@pytest.mark.asyncio
+async def test_window_store_Event():
+    from test_store import DictStoreConfig
+
+    store = DictStoreConfig()
+
+    v = Event()
+    dv = Value(0.2)
+
+    win = time_window(v, dv, store_cfg=store)
+
+    v.emit(1)  # 1 evicted at 0.2
+
+    await asyncio.sleep(0.1)  # t = 0.1
+
+    v.emit(2)  # 2 evicted at 0.3
+
+    store.data.run_atexits()
+
+    await asyncio.sleep(0.15)  # t = 0.25
+
+    win = time_window(v, dv, store_cfg=store)
+
+    assert win.value == [2]
+
+    await asyncio.sleep(0.1)  # t = 0.35
+
+    assert win.value == []

@@ -6,6 +6,7 @@ import asyncio
 import sentinel
 
 from yarp import NoValue, Event, Value, ensure_value, fn
+from .store import null_store
 from .utils import make_same_type, emit_fn, on_value
 
 __names__ = [
@@ -137,7 +138,7 @@ def delay(source, delay_seconds):
     return output
 
 
-def time_window(source, duration_seconds, initial_value=NOTHING):
+def time_window(source, duration_seconds, initial_value=NOTHING, store_cfg=null_store):
     """Produce a moving window over the historical values of a Value or the
     events of an Event within a given time period.
 
@@ -150,16 +151,28 @@ def time_window(source, duration_seconds, initial_value=NOTHING):
 
     If initial_value is provided, it will be treated as an event or change at
     the time this is called.
+
+    If store_cfg is provided, the values will be stored across runs. For
+    Values, the behaviour is as if the source changed to NoValue while the
+    program is stopped.
     """
     duration_seconds = ensure_value(duration_seconds)
 
     loop = asyncio.get_event_loop()
 
+    store = store_cfg.build()
+
+    initial_values_and_times = (
+        [(initial_value, loop.time())] if initial_value is not NOTHING else []
+    )
+    initial_values_and_times = store.load(initial_values_and_times)
+
     # value containing a list of values and the time at which they were last
     # seen. the time may be None for the current value of a Value
-    values_and_times = Value([], inputs=(source, duration_seconds))
-    if initial_value is not NOTHING:
-        values_and_times.value = [(initial_value, loop.time())]
+    values_and_times = Value(
+        initial_values_and_times,
+        inputs=(source, duration_seconds),
+    )
 
     @fn
     def to_values(values_and_times):
@@ -190,24 +203,38 @@ def time_window(source, duration_seconds, initial_value=NOTHING):
         if len(vt) < len(values_and_times.value):
             values_and_times.value = vt
 
+    # deal with old restored values
+    drop_expired_values(duration_seconds.value)
+
     match source:
         case Value():
-            values_and_times.value = values_and_times.value + [(source.value, None)]
+
+            def new_values_and_times(new_value):
+                if values_and_times.value:
+                    # update the expiry time for the last value first
+                    old_value, _old_time = values_and_times.value[-1]
+                    return values_and_times.value[:-1] + [
+                        (old_value, loop.time()),
+                        (new_value, None),
+                    ]
+                else:
+                    return [(new_value, None)]
+
+            values_and_times.value = new_values_and_times(source.value)
 
             @source.on_value_changed
             def _(new_value):
-                # update the expiry time for the last value first
-                old_value, _old_time = values_and_times.value[-1]
-                values_and_times.value = values_and_times.value[:-1] + [
-                    (old_value, loop.time()),
-                    (new_value, None),
-                ]
+                values_and_times.value = new_values_and_times(new_value)
+
+            store.store_atexit(lambda: new_values_and_times(NoValue))
 
         case Event():
 
             @source.on_event
             def _(event):
                 values_and_times.value = values_and_times.value + [(event, loop.time())]
+
+            store.store_atexit(lambda: values_and_times.value)
 
         case _:  # pragma: no cover
             assert False
