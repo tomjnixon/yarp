@@ -1,4 +1,4 @@
-from yarp.store import Store, StoreConfig, FileStore, FileStoreConfig
+from yarp.store import Store, StoreConfig, FileStoreConfig
 from dataclasses import dataclass, field
 from pathlib import PosixPath
 
@@ -72,7 +72,8 @@ def test_file_store(tmpdir):
     cfg = FileStoreConfig(tmpdir)
     check_store_cfg(cfg)
 
-def test_dict_store():
+
+def test_build_value():
     cfg = DictStoreConfig()
 
     v = cfg.build_value(1)
