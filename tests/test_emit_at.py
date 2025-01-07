@@ -1,5 +1,6 @@
 from yarp import Value
 from yarp.temporal import emit_at
+import asyncio
 from asyncio import Queue, wait_for, sleep
 import pytest
 from pytest import approx
@@ -7,20 +8,22 @@ from pytest import approx
 tick = 0.2
 
 
-def setup_emit_at(t, event_loop):
+def setup_emit_at(t):
+    loop = asyncio.get_running_loop()
     e = emit_at(t)
 
     q = Queue()
-    e.on_event(lambda ev: q.put_nowait((event_loop.time(), ev)))
+    e.on_event(lambda ev: q.put_nowait((loop.time(), ev)))
 
     return e, q
 
 
 @pytest.mark.asyncio
-async def test_basic(event_loop):
-    t = Value(event_loop.time() + tick)
+async def test_basic():
+    loop = asyncio.get_running_loop()
+    t = Value(loop.time() + tick)
 
-    e, q = setup_emit_at(t, event_loop)
+    e, q = setup_emit_at(t)
 
     tt, ev = await wait_for(q.get(), tick * 2)
 
@@ -29,11 +32,12 @@ async def test_basic(event_loop):
 
 
 @pytest.mark.asyncio
-async def test_value(event_loop):
-    expected_t = event_loop.time() + tick
+async def test_value():
+    loop = asyncio.get_running_loop()
+    expected_t = loop.time() + tick
     t = Value((expected_t, 5))
 
-    e, q = setup_emit_at(t, event_loop)
+    e, q = setup_emit_at(t)
 
     tt, ev = await wait_for(q.get(), tick * 2)
 
@@ -45,12 +49,13 @@ async def test_value(event_loop):
 
 
 @pytest.mark.asyncio
-async def test_before_now(event_loop):
+async def test_before_now():
+    loop = asyncio.get_running_loop()
     t = Value(None)
 
-    e, q = setup_emit_at(t, event_loop)
+    e, q = setup_emit_at(t)
 
-    now = event_loop.time()
+    now = loop.time()
     expected_t = now - tick
     for i in range(2):
         t.value = expected_t
@@ -65,11 +70,12 @@ async def test_before_now(event_loop):
 
 
 @pytest.mark.asyncio
-async def test_replace_unfired(event_loop):
-    start = event_loop.time()
+async def test_replace_unfired():
+    loop = asyncio.get_running_loop()
+    start = loop.time()
     t = Value((start + 2 * tick, 5))
 
-    e, q = setup_emit_at(t, event_loop)
+    e, q = setup_emit_at(t)
 
     t.value = (start + tick, 6)
 

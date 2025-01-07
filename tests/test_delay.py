@@ -1,4 +1,5 @@
 import pytest
+import pytest_asyncio
 import asyncio
 import time
 
@@ -28,13 +29,14 @@ class TestDelayPersistent(object):
         """A semaphore released whenever the callback is called."""
         return asyncio.Semaphore(0)
 
-    @pytest.fixture
-    def dv(self, v, dt, log, sem, event_loop):
+    @pytest_asyncio.fixture
+    async def dv(self, v, dt, log, sem):
         """Delayed value"""
+        loop = asyncio.get_running_loop()
         dv = delay(v, dt)
 
         def on_change(value):
-            log.append((event_loop.time(), value))
+            log.append((loop.time(), value))
             sem.release()
 
         dv.on_value_changed(on_change)
@@ -47,9 +49,10 @@ class TestDelayPersistent(object):
         assert dv.value == 123
 
     @pytest.mark.asyncio
-    async def test_single_change(self, v, dv, sem, log, event_loop):
+    async def test_single_change(self, v, dv, sem, log):
         # Trigger a change for later...
-        before = event_loop.time()
+        loop = asyncio.get_running_loop()
+        before = loop.time()
         v.value = 321
         assert dv.value == 123
         assert len(log) == 0
@@ -60,9 +63,10 @@ class TestDelayPersistent(object):
         assert dv.value == 321
 
     @pytest.mark.asyncio
-    async def test_rapid_changes(self, v, dv, sem, log, event_loop):
+    async def test_rapid_changes(self, v, dv, sem, log):
         # Trigger a sequence of rapid changes
-        before = event_loop.time()
+        loop = asyncio.get_running_loop()
+        before = loop.time()
         v.value = 1234
         v.value = 12345
         v.value = 123456
@@ -81,8 +85,9 @@ class TestDelayPersistent(object):
         assert dv.value == 123456
 
     @pytest.mark.asyncio
-    async def test_delay_increase(self, v, dv, dt, sem, log, event_loop):
-        before = event_loop.time()
+    async def test_delay_increase(self, v, dv, dt, sem, log):
+        loop = asyncio.get_running_loop()
+        before = loop.time()
         v.value = 321
 
         # Changing the delay after a value change has occurred should push that
@@ -97,8 +102,9 @@ class TestDelayPersistent(object):
         assert dv.value == 321
 
     @pytest.mark.asyncio
-    async def test_delay_decrease(self, v, dv, dt, sem, log, event_loop):
-        before = event_loop.time()
+    async def test_delay_decrease(self, v, dv, dt, sem, log):
+        loop = asyncio.get_running_loop()
+        before = loop.time()
         v.value = 321
 
         # Changing the delay after a value change has occurred should push that
@@ -112,8 +118,9 @@ class TestDelayPersistent(object):
         assert dv.value == 321
 
     @pytest.mark.asyncio
-    async def test_delay_decrease_lots(self, v, dv, dt, sem, log, event_loop):
-        before = event_loop.time()
+    async def test_delay_decrease_lots(self, v, dv, dt, sem, log):
+        loop = asyncio.get_running_loop()
+        before = loop.time()
         v.value = 321
 
         # Changing the delay such that a still-delayed value should have been
