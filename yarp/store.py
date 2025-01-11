@@ -55,7 +55,7 @@ class StoreConfig:
         initial_value is the value used if no value was previously stored.
 
         If store_initial, the initial value will be stored. This might be
-        useful if initial_value is not constalt.
+        useful if initial_value is not constant.
 
         Other parameters are the same as for Value.
         """
