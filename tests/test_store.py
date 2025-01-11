@@ -1,43 +1,4 @@
-from yarp.store import Store, StoreConfig, FileStoreConfig
-from dataclasses import dataclass, field
-from pathlib import PosixPath
-
-
-@dataclass
-class DictStoreData:
-    store: dict = field(default_factory=dict)
-    atexit_cbs: list = field(default_factory=list)
-
-    def run_atexits(self):
-        for cb in self.atexit_cbs:
-            cb()
-        self.atexit_cbs.clear()
-
-
-@dataclass
-class DictStore(Store):
-    data: DictStoreData
-    path: PosixPath
-
-    def load(self, default):
-        return self.data.store.get(self.path, default)
-
-    def store(self, value):
-        self.data.store[self.path] = value
-
-    def store_atexit(self, get_value):
-        def cb():
-            self.store(get_value())
-
-        self.data.atexit_cbs.append(cb)
-
-
-@dataclass
-class DictStoreConfig(StoreConfig):
-    data: DictStoreData = field(default_factory=DictStoreData)
-
-    def build(self):
-        return DictStore(self.data, self.path)
+from yarp.store import FakeStoreConfig, FileStoreConfig
 
 
 def check_store_cfg(store_cfg):
@@ -63,8 +24,8 @@ def check_store_cfg(store_cfg):
     assert store.load("initial") == "value"
 
 
-def test_dict_store():
-    cfg = DictStoreConfig()
+def test_fake_store():
+    cfg = FakeStoreConfig()
     check_store_cfg(cfg)
 
 
@@ -74,7 +35,7 @@ def test_file_store(tmpdir):
 
 
 def test_build_value():
-    cfg = DictStoreConfig()
+    cfg = FakeStoreConfig()
 
     v = cfg.build_value(1)
     assert v.value == 1

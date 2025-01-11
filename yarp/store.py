@@ -1,4 +1,4 @@
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import PurePosixPath, Path
 import pickle
 import traceback
@@ -128,6 +128,50 @@ class NullStoreConfig(StoreConfig):
 
 
 null_store = NullStoreConfig()
+
+
+# fake store for use in testing
+
+# unlike NullStore this actually stores data, but only in memory. atexit stores
+# are ran manually, as in testing we need to see the effects of these before
+# the program exits
+
+
+@dataclass
+class FakeStoreData:
+    store: dict = field(default_factory=dict)
+    atexit_cbs: list = field(default_factory=list)
+
+    def run_atexits(self):
+        for cb in self.atexit_cbs:
+            cb()
+        self.atexit_cbs.clear()
+
+
+@dataclass
+class FakeStore(Store):
+    data: FakeStoreData
+    path: PurePosixPath
+
+    def load(self, default):
+        return self.data.store.get(self.path, default)
+
+    def store(self, value):
+        self.data.store[self.path] = value
+
+    def store_atexit(self, get_value):
+        def cb():
+            self.store(get_value())
+
+        self.data.atexit_cbs.append(cb)
+
+
+@dataclass
+class FakeStoreConfig(StoreConfig):
+    data: FakeStoreData = field(default_factory=FakeStoreData)
+
+    def build(self):
+        return FakeStore(self.data, self.path)
 
 
 # default for use in scripts; default values should be null_store

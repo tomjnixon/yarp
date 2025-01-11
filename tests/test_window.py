@@ -6,6 +6,7 @@ import time
 
 from yarp import NoValue, Event, Value, window, time_window
 from yarp.utils import on_value
+from yarp.store import FakeStoreConfig
 
 
 def test_window():
@@ -387,9 +388,7 @@ class TestTimeWindowEvent(TestTimeWindow):
 
 @pytest.mark.asyncio
 async def test_window_store_Value():
-    from test_store import DictStoreConfig
-
-    store = DictStoreConfig()
+    store = FakeStoreConfig()
 
     v = Value(1)
     dv = Value(0.2)
@@ -423,9 +422,7 @@ async def test_window_store_Value():
 
 @pytest.mark.asyncio
 async def test_window_store_Event():
-    from test_store import DictStoreConfig
-
-    store = DictStoreConfig()
+    store = FakeStoreConfig()
 
     v = Event()
     dv = Value(0.2)
