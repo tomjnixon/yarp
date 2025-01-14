@@ -4,6 +4,7 @@ Temporal filters for :py:class:`Value` values.
 
 import asyncio
 import sentinel
+import time
 
 from yarp import NoValue, Event, Value, ensure_value, fn
 from .store import null_store
@@ -138,6 +139,23 @@ def delay(source, delay_seconds):
     return output
 
 
+def _real_time_offset(loop):
+    """get the offset from the time of loop (which has no fixed epoch) to some
+    time with a fixed epoch, used for saving and restoring times between runs"""
+    # use time.time (unix time); this is not ideal, but probably the "least
+    # worst" option. we are interested in time differences, not time of day, so
+    # TAI would be best, but time.CLOCK_TAI is not really dependable.
+
+    # CLOCK_TAI is only available on linux (and it's not clear how to detect
+    # its availability), but more importantly its behaviour is dependant on
+    # system configuration, which can change over time. on my systems,
+    # CLOCK_TAI currently returns the same as time.time, when it should be 37
+    # seconds off.
+
+    # this really isn't a big issue either way
+    return time.time() - loop.time()
+
+
 def time_window(source, duration_seconds, initial_value=NOTHING, store_cfg=null_store):
     """Produce a moving window over the historical values of a Value or the
     events of an Event within a given time period.
@@ -160,12 +178,31 @@ def time_window(source, duration_seconds, initial_value=NOTHING, store_cfg=null_
 
     loop = asyncio.get_event_loop()
 
-    store = store_cfg.build()
+    store = store_cfg.build(version=1)
 
-    initial_values_and_times = (
-        [(initial_value, loop.time())] if initial_value is not NOTHING else []
-    )
-    initial_values_and_times = store.load(initial_values_and_times)
+    # save and load real times in values_and_times, to deal with changes in
+    # loop.time epoch
+
+    def offset_values_and_times(values_and_times, offset):
+        return [
+            (value, None) if t is None else (value, t + offset)
+            for value, t in values_and_times
+        ]
+
+    def to_store(loop, values_and_times):
+        return offset_values_and_times(values_and_times, _real_time_offset(loop))
+
+    def from_store(loop, values_and_times):
+        return offset_values_and_times(values_and_times, -_real_time_offset(loop))
+
+    # get initial value
+    initial_values_and_times = store.load(None)
+    if initial_values_and_times is None:
+        initial_values_and_times = (
+            [(initial_value, loop.time())] if initial_value is not NOTHING else []
+        )
+    else:
+        initial_values_and_times = from_store(loop, initial_values_and_times)
 
     # value containing a list of values and the time at which they were last
     # seen. the time may be None for the current value of a Value
@@ -226,7 +263,7 @@ def time_window(source, duration_seconds, initial_value=NOTHING, store_cfg=null_
             def _(new_value):
                 values_and_times.value = new_values_and_times(new_value)
 
-            store.store_atexit(lambda: new_values_and_times(NoValue))
+            store.store_atexit(lambda: to_store(loop, new_values_and_times(NoValue)))
 
         case Event():
 
@@ -234,7 +271,7 @@ def time_window(source, duration_seconds, initial_value=NOTHING, store_cfg=null_
             def _(event):
                 values_and_times.value = values_and_times.value + [(event, loop.time())]
 
-            store.store_atexit(lambda: values_and_times.value)
+            store.store_atexit(lambda: to_store(loop, values_and_times.value))
 
         case _:  # pragma: no cover
             assert False
