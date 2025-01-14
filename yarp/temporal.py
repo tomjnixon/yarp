@@ -5,6 +5,7 @@ Temporal filters for :py:class:`Value` values.
 import asyncio
 import sentinel
 import time
+import warnings
 
 from yarp import NoValue, Event, Value, ensure_value, fn
 from .store import null_store
@@ -196,13 +197,22 @@ def time_window(source, duration_seconds, initial_value=NOTHING, store_cfg=null_
         return offset_values_and_times(values_and_times, -_real_time_offset(loop))
 
     # get initial value
+    initial_values_and_times_default = (
+        [(initial_value, loop.time())] if initial_value is not NOTHING else []
+    )
     initial_values_and_times = store.load(None)
     if initial_values_and_times is None:
-        initial_values_and_times = (
-            [(initial_value, loop.time())] if initial_value is not NOTHING else []
-        )
+        initial_values_and_times = initial_values_and_times_default
     else:
         initial_values_and_times = from_store(loop, initial_values_and_times)
+        cur_time = loop.time()
+        if any(
+            t > cur_time for (value, t) in initial_values_and_times if t is not None
+        ):
+            warnings.warn(
+                "your computer appears to have time travelled; discarding old state"
+            )
+            initial_values_and_times = initial_values_and_times_default
 
     # value containing a list of values and the time at which they were last
     # seen. the time may be None for the current value of a Value

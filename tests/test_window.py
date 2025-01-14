@@ -446,3 +446,30 @@ async def test_window_store_Event():
     await asyncio.sleep(0.1)  # t = 0.35
 
     assert win.value == []
+
+
+@pytest.mark.asyncio
+async def test_window_time_travel():
+    """stored times in the future cause te state to be discarded"""
+    store = FakeStoreConfig()
+
+    v = Event()
+    dv = Value(0.2)
+
+    win = time_window(v, dv, store_cfg=store)
+
+    v.emit(1)
+
+    store.data.run_atexits()
+
+    # XXX: must match version and storage format used by time_window
+    s = store.build(version=1)
+    old = s.load(None)
+    assert old is not None and len(old) == 1
+    new = [(v, t + 1) for v, t in old]
+    s.store(new)
+
+    with pytest.warns(UserWarning, match="time travel"):
+        win = time_window(v, dv, store_cfg=store)
+
+    assert win.value == []
